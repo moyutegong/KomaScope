@@ -34,8 +34,3 @@ export function centerInWorkArea(width: number, height: number, workArea: Rect):
     height: h
   }
 }
-
-/** 矩形是否与工作区有交集(用于判断记忆的窗口是否仍可见) */
-export function intersects(a: Rect, b: Rect): boolean {
-  return a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y
-}

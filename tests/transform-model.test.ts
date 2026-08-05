@@ -11,7 +11,6 @@ import {
   screenToImage,
   translate,
   zoomAt,
-  zoomByCenter,
   zoomToScale
 } from '../src/shared/transform-model'
 
@@ -106,18 +105,6 @@ describe('zoomAt 锚点缩放(§4.3 公式)', () => {
       tx: 0,
       ty: 0
     })
-  })
-})
-
-describe('zoomByCenter 快捷键缩放', () => {
-  it('锚点为视口中心', () => {
-    const base = applyFit('fitScreen', viewport, image)
-    const t = zoomByCenter(base, viewport, 1.5)
-    const center = { x: viewport.width / 2, y: viewport.height / 2 }
-    const before = screenToImage(base, center)
-    const after = screenToImage(t, center)
-    expect(after.x).toBeCloseTo(before.x, 6)
-    expect(after.y).toBeCloseTo(before.y, 6)
   })
 })
 

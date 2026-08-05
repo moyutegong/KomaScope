@@ -7,12 +7,6 @@
  * (TILE_SIZE×TILE_SIZE)为单位缓存,翻页时释放不可见页。
  */
 
-export interface TilePosition {
-  /** 瓦片网格坐标 */
-  tileX: number
-  tileY: number
-}
-
 export class TileCache<T> {
   /** 页 → (瓦片坐标 key → 值) */
   private pages = new Map<string, Map<string, T>>()

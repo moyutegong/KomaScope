@@ -15,6 +15,7 @@ import {
 import type { Point, Size, ViewTransform } from '../../shared/transform-model'
 import { TileCache } from '../../shared/tile-cache'
 import { TILE_SIZE, tileOrigin } from '../../shared/tile-grid'
+import { mimeFromName } from '../../shared/mime'
 import { t } from '../i18n'
 import type { ImageRenderer } from './image-renderer'
 import type { StatusBar } from '../ui/statusbar'
@@ -24,22 +25,6 @@ const TILED_THRESHOLD = 8192
 
 /** 双页跨页左右页间距(图片像素,§13 P1) */
 const SPREAD_GAP = 16
-
-/** 扩展名 → MIME(压缩包条目字节构造 Blob 时需要,createImageBitmap 依赖正确 type) */
-const MIME_BY_EXT: Record<string, string> = {
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-  '.bmp': 'image/bmp',
-  '.avif': 'image/avif'
-}
-
-function mimeFromName(name: string): string {
-  const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
-  return MIME_BY_EXT[ext] ?? 'application/octet-stream'
-}
 
 export interface ViewerCallbacks {
   onFolderChanged?: (folderPath: string) => void

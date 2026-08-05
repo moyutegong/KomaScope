@@ -86,11 +86,6 @@ export function zoomToScale(t: ViewTransform, targetScale: number, anchor: Point
   }
 }
 
-/** 以视口中心为锚点缩放(快捷键 + / - 使用,§5) */
-export function zoomByCenter(t: ViewTransform, viewport: Size, factor: number): ViewTransform {
-  return zoomAt(t, { x: viewport.width / 2, y: viewport.height / 2 }, factor)
-}
-
 /** 平移(dx, dy 为视口像素增量) */
 export function translate(t: ViewTransform, dx: number, dy: number): ViewTransform {
   return { scale: t.scale, tx: t.tx + dx, ty: t.ty + dy }

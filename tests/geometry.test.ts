@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { centerInWorkArea, clampBoundsToDisplay, intersects } from '../src/shared/geometry'
+import { centerInWorkArea, clampBoundsToDisplay } from '../src/shared/geometry'
 
 const workArea = { x: 100, y: 50, width: 1920, height: 1080 }
 
@@ -39,12 +39,5 @@ describe('centerInWorkArea', () => {
   it('超过工作区时收缩', () => {
     const r = centerInWorkArea(4000, 3000, workArea)
     expect(r).toEqual({ x: 100, y: 50, width: 1920, height: 1080 })
-  })
-})
-
-describe('intersects', () => {
-  it('相交/不相交判断', () => {
-    expect(intersects({ x: 0, y: 0, width: 10, height: 10 }, { x: 5, y: 5, width: 10, height: 10 })).toBe(true)
-    expect(intersects({ x: 0, y: 0, width: 10, height: 10 }, { x: 20, y: 20, width: 10, height: 10 })).toBe(false)
   })
 })

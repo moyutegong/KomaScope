@@ -2,26 +2,11 @@
  * 长图模式(§需求4):单页无限下拉——所有图片垂直拼接成长条,滚动浏览。
  * 每张图片全宽显示、高度自适应;点击某张跳转到对应页并切回翻页模式。
  */
+import { mimeFromName } from '../../shared/mime'
 import type { PageItem } from '../../shared/types'
 
 export interface LongViewEvents {
   onSelectPage: (index: number) => void
-}
-
-/** 扩展名 → MIME(压缩包条目字节构造 Blob 时需要具体类型,img 才能解码) */
-const MIME_BY_EXT: Record<string, string> = {
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.png': 'image/png',
-  '.webp': 'image/webp',
-  '.gif': 'image/gif',
-  '.bmp': 'image/bmp',
-  '.avif': 'image/avif'
-}
-
-function mimeFromName(name: string): string {
-  const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
-  return MIME_BY_EXT[ext] ?? 'application/octet-stream'
 }
 
 export class LongView {
