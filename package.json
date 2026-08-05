@@ -1,6 +1,6 @@
 {
   "name": "komascope",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "An open-source lightweight comic reader optimized for 4K displays",
   "main": "./out/main/index.js",
   "author": "KomaScope contributors",
