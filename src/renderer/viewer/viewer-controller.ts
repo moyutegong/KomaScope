@@ -335,10 +335,11 @@ export class ViewerController {
 
   /**
    * 缓存 key:zip/cbz 来源所有页 path 相同,必须追加 archiveEntry 区分
-   * (否则预解码只执行一次、瓦片模式串图,§13 P0 review should-fix)
+   * (否则预解码只执行一次、瓦片模式串图,§13 P0 review should-fix)。
+   * 用 JSON.stringify 而非 '#' 拼接,避免磁盘路径含 '#' 时与 zip 条目碰撞。
    */
   private pageCacheKey(page: PageItem): string {
-    return page.archiveEntry ? `${page.path}#${page.archiveEntry}` : page.path
+    return page.archiveEntry ? JSON.stringify([page.path, page.archiveEntry]) : page.path
   }
 
   private get currentPagePath(): string | null {

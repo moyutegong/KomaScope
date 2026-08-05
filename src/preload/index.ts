@@ -36,7 +36,9 @@ const api: KomaScopeApi = {
   toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen'),
   setImmersive: (enabled) => ipcRenderer.invoke('window:setImmersive', enabled),
   onFullScreenChanged: (handler) => {
-    ipcRenderer.on('fullscreen:changed', (_event, isFullScreen: boolean) => handler(isFullScreen))
+    ipcRenderer.on('fullscreen:changed', (_event, isFullScreen: unknown) => {
+      if (typeof isFullScreen === 'boolean') handler(isFullScreen)
+    })
   }
 }
 

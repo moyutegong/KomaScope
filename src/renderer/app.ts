@@ -192,15 +192,20 @@ function main(): void {
   new InputController({
     onPathsDropped: (paths) => {
       void (async () => {
-        const first = await window.komascope.statPath(paths[0])
-        if (first.isDirectory) {
-          await controller.openFolder(paths[0])
-        } else if (paths.length === 1 && isArchiveFile(paths[0])) {
-          // 拖入单个 cbz/zip:作为压缩包打开(§13 P0)
-          await controller.openArchive(paths[0])
-        } else {
-          paths.sort((a, b) => naturalCompare(fileName(a), fileName(b)))
-          await controller.openFiles(paths)
+        try {
+          const first = await window.komascope.statPath(paths[0])
+          if (first.isDirectory) {
+            await controller.openFolder(paths[0])
+          } else if (paths.length === 1 && isArchiveFile(paths[0])) {
+            // 拖入单个 cbz/zip:作为压缩包打开(§13 P0)
+            await controller.openArchive(paths[0])
+          } else {
+            paths.sort((a, b) => naturalCompare(fileName(a), fileName(b)))
+            await controller.openFiles(paths)
+          }
+        } catch {
+          // 拖入路径可能已被删除/移动,避免未捕获 rejection
+          console.error(t('error.openPath'), paths[0])
         }
       })()
     },
