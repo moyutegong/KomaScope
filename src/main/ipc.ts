@@ -9,6 +9,7 @@ import { readImageMeta, scanFolder } from './file-service'
 import { readArchiveEntry, scanArchive } from './zip-source'
 import { configStore } from './config-store'
 import { buildAppMenu } from './menu'
+import { rebuildMainWindow } from './window-manager'
 import type { AppConfig, PathStat, WindowInfo } from '../shared/types'
 
 /** 自定义协议名:渲染进程经 fetch 流式读取本地图片(4.2) */
@@ -37,7 +38,8 @@ function getWindowInfo(win: BrowserWindow): WindowInfo {
     },
     dpr: display.scaleFactor,
     screenId: display.id.toString(),
-    isFullScreen: win.isFullScreen()
+    isFullScreen: win.isFullScreen(),
+    frameless: !win.isMenuBarVisible()
   }
 }
 
@@ -179,13 +181,32 @@ export function registerIpc(): void {
     return win.isFullScreen()
   })
 
-  // --- 沉浸模式(OS 全屏 + 隐藏菜单栏;菜单栏在 Windows 上可用 setMenuBarVisibility) ---
+  // --- 沉浸模式(§需求):非全屏无边框窗口,隐藏标题栏/系统菜单 ---
+  // frame 无法运行时切换,退出沉浸(有边框,可查看系统菜单)时重建窗口
   ipcMain.handle('window:setImmersive', (event, enabled: unknown) => {
     if (typeof enabled !== 'boolean') throw new Error('window:setImmersive 需要布尔参数')
     const win = BrowserWindow.fromWebContents(event.sender)
     if (!win) throw new Error('window:setImmersive 找不到窗口')
-    win.setFullScreen(enabled)
-    win.setMenuBarVisibility(!enabled)
+    const win2 = rebuildMainWindow(enabled)
+    buildAppMenu(configStore.get().locale as 'zh' | 'en', win2)
     return enabled
+  })
+
+  // --- 窗口控制(无边框窗口自绘按钮用,§需求) ---
+  ipcMain.handle('window:minimize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('window:minimize 找不到窗口')
+    win.minimize()
+  })
+  ipcMain.handle('window:maximizeToggle', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('window:maximizeToggle 找不到窗口')
+    if (win.isMaximized()) win.unmaximize()
+    else win.maximize()
+  })
+  ipcMain.handle('window:close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('window:close 找不到窗口')
+    win.close()
   })
 }

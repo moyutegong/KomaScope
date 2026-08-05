@@ -2,7 +2,20 @@
  * 渲染进程入口:装配 UI、ViewerController、输入映射与配置恢复。
  * M3 范围:平移/锚点缩放/适配切换/缩放锁定/快捷键(§5)。
  */
-import { BookOpen, FolderOpen, Lock, Maximize, MousePointerClick, PanelLeft, Rows3, Scan, createIcons } from 'lucide'
+import {
+  BookOpen,
+  FolderOpen,
+  Lock,
+  Maximize,
+  Minus,
+  MousePointerClick,
+  PanelLeft,
+  Rows3,
+  Scan,
+  Square,
+  X,
+  createIcons
+} from 'lucide'
 import type { ScanResult } from '../shared/types'
 import type { Point } from '../shared/transform-model'
 import { naturalCompare } from '../shared/natural-sort'
@@ -246,12 +259,21 @@ function main(): void {
     immersive = enabled
     document.body.classList.toggle('immersive', enabled)
     if (!enabled) hideAllUi()
+    // 主进程重建为无边框(沉浸)/有边框窗口(可查看系统菜单,§需求)
     await window.komascope.setImmersive(enabled)
   }
 
   immersiveBtn.addEventListener('click', () => {
     void setImmersive(!immersive)
   })
+
+  // 无边框窗口自绘控制按钮(最小化/最大化/关闭,§需求)
+  const winMinBtn = document.getElementById('btn-win-min') as HTMLButtonElement
+  const winMaxBtn = document.getElementById('btn-win-max') as HTMLButtonElement
+  const winCloseBtn = document.getElementById('btn-win-close') as HTMLButtonElement
+  winMinBtn.addEventListener('click', () => void window.komascope.minimizeWindow())
+  winMaxBtn.addEventListener('click', () => void window.komascope.maximizeToggleWindow())
+  winCloseBtn.addEventListener('click', () => void window.komascope.closeWindow())
 
   // 非沉浸模式自动隐藏开关(§需求3):开启后侧栏/工具栏/状态栏浮动隐藏
   const setAutoHide = (enabled: boolean): void => {
@@ -361,10 +383,10 @@ function main(): void {
         case 'f':
         case 'F':
           e.preventDefault()
-          void setImmersive(!immersive)
+          void window.komascope.toggleFullscreen()
           break
         case 'Escape':
-          // 沉浸模式:退出全屏并恢复 UI;普通全屏:仅退出全屏
+          // 沉浸模式:退出无边框沉浸并恢复 UI;全屏:退出 OS 全屏
           if (immersive) void setImmersive(false)
           else void exitFullscreenIfNeeded()
           break
@@ -385,7 +407,9 @@ function main(): void {
   watchDpr()
 
   // lucide 图标:替换 [data-lucide] 元素为 SVG(在文案应用之前执行)
-  createIcons({ icons: { BookOpen, FolderOpen, Lock, Maximize, MousePointerClick, PanelLeft, Rows3, Scan } })
+  createIcons({
+    icons: { BookOpen, FolderOpen, Lock, Maximize, Minus, MousePointerClick, PanelLeft, Rows3, Scan, Square, X }
+  })
 
   // 应用菜单动作(主进程 File/View 菜单,§5 快捷键等价)
   window.komascope.onMenuAction((action) => {
@@ -446,6 +470,7 @@ function main(): void {
         controller.flipVertical()
         break
       case 'toggle-fullscreen':
+        // View 菜单"沉浸模式":切换非全屏无边框沉浸(§需求)
         void setImmersive(!immersive)
         break
     }
@@ -471,6 +496,19 @@ function main(): void {
       void window.komascope.setMenuLocale(isLocale(config.locale) ? config.locale : 'zh')
     })
     .catch((err) => console.error(t('error.loadConfig'), err))
+
+  // 启动同步无边框(沉浸)状态:退出沉浸重建窗口后,新渲染进程据此恢复 UI
+  void window.komascope
+    .getWindowInfo()
+    .then((info) => {
+      if (info.frameless && !immersive) {
+        immersive = true
+        document.body.classList.add('immersive')
+      }
+    })
+    .catch(() => {
+      // 窗口信息读取失败时保持默认(非沉浸)
+    })
 }
 
 main()

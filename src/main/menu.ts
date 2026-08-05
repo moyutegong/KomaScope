@@ -159,8 +159,8 @@ export function buildAppMenu(locale: Locale, win: BrowserWindow): void {
         { label: t('flipV'), click: () => sendAction(win, 'flip-v') },
         { type: 'separator' },
         {
+          // 沉浸 = 非全屏无边框(§需求);F11 全屏由渲染进程 keydown 处理
           label: t('fullscreen'),
-          accelerator: 'F11',
           click: () => sendAction(win, 'toggle-fullscreen')
         }
       ]

@@ -61,6 +61,8 @@ export interface WindowInfo {
   dpr: number
   screenId: string
   isFullScreen: boolean
+  /** 无边框窗口(沉浸模式,§需求):true 时隐藏标题栏与系统菜单 */
+  frameless: boolean
 }
 
 /** folder:scan 返回值 */
@@ -112,10 +114,14 @@ export interface KomaScopeApi {
   getWindowInfo: () => Promise<WindowInfo>
   setWindowBounds: (bounds: { x: number; y: number; width: number; height: number }) => Promise<void>
   toggleFullscreen: () => Promise<boolean>
-  /** 沉浸模式:OS 全屏 + 隐藏菜单栏(全屏本身无边框) */
+  /** 沉浸模式:非全屏无边框窗口(隐藏标题栏/系统菜单);false 重建为有边框窗口 */
   setImmersive: (enabled: boolean) => Promise<boolean>
   /** 监听全屏状态变化(系统方式进入/退出全屏时同步沉浸 UI) */
   onFullScreenChanged: (handler: (isFullScreen: boolean) => void) => void
+  /** 无边框窗口自绘控制按钮(§需求) */
+  minimizeWindow: () => Promise<void>
+  maximizeToggleWindow: () => Promise<void>
+  closeWindow: () => Promise<void>
 }
 
 /** 渲染进程全局(window.komascope) */

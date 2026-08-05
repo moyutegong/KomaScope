@@ -1,6 +1,7 @@
 /**
  * 窗口管理(FR-8 / §4.4):窗口创建、默认尺寸、几何记忆、多显示器定位、全屏。
- * 首次启动按主显示器工作区取 min(88%, 3360×1890);后续按记忆恢复。
+ * 默认非全屏无边框(沉浸模式,§需求):frame:false 隐藏标题栏与系统菜单;
+ * 退出沉浸时重建为有边框窗口以便查看系统菜单。F11 为 OS 全屏。
  */
 import { app, BrowserWindow, screen } from 'electron'
 import { join } from 'node:path'
@@ -31,7 +32,12 @@ export function restoreDisplayId(saved: string): string {
   return screen.getPrimaryDisplay().id.toString()
 }
 
-export function createMainWindow(): BrowserWindow {
+/**
+ * 创建主窗口。
+ * @param frameless 无边框(沉浸,默认 true):隐藏标题栏与系统菜单;
+ *                  false 时为有边框窗口(可查看系统菜单,§需求)
+ */
+export function createMainWindow(frameless = true): BrowserWindow {
   const saved = configStore.get()
   let bounds =
     saved.screenId !== '' && saved.windowBounds.width > 0
@@ -52,6 +58,7 @@ export function createMainWindow(): BrowserWindow {
 
   const win = new BrowserWindow({
     ...bounds,
+    frame: !frameless,
     icon: iconPath,
     show: false,
     backgroundColor: '#121212',
@@ -62,6 +69,9 @@ export function createMainWindow(): BrowserWindow {
       sandbox: true
     }
   })
+
+  // 无边框(沉浸)时隐藏菜单栏;有边框时显示,以便访问系统菜单(§需求)
+  win.setMenuBarVisibility(!frameless)
 
   // 记忆窗口几何:resize/move 停止后防抖落盘(§4.5)
   let geometryTimer: ReturnType<typeof setTimeout> | null = null
@@ -99,5 +109,20 @@ export function createMainWindow(): BrowserWindow {
     void win.loadFile(join(__dirname, '../renderer/index.html'))
   }
 
+  return win
+}
+
+/**
+ * 切换无边框模式(沉浸 ↔ 普通,§需求):frame 无法运行时切换,
+ * 销毁旧窗口并按需重建为有边框/无边框窗口,保留几何与全屏状态。
+ * @param frameless true=无边框(沉浸);false=有边框(可查看系统菜单)
+ */
+export function rebuildMainWindow(frameless: boolean): BrowserWindow {
+  const old = BrowserWindow.getAllWindows()[0]
+  const bounds = old && !old.isDestroyed() ? old.getBounds() : configStore.get().windowBounds
+  const wasFullScreen = old?.isFullScreen() ?? false
+  old?.destroy()
+  const win = createMainWindow(frameless)
+  if (!wasFullScreen) win.setBounds(bounds)
   return win
 }

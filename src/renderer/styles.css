@@ -245,6 +245,44 @@ button:focus-visible {
   flex-shrink: 0;
   position: relative;
   z-index: 10;
+  /* 无边框窗口拖动区域(§需求);按钮自身 no-drag */
+  -webkit-app-region: drag;
+}
+
+.toolbar .toolbar-btn,
+.win-controls {
+  -webkit-app-region: no-drag;
+}
+
+/* 工具栏右侧弹性占位(把窗口控制按钮推到最右) */
+.toolbar-spacer {
+  flex: 1;
+}
+
+/* 无边框窗口自绘控制按钮(§需求) */
+.win-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(2px * var(--ui-scale));
+}
+
+.win-btn {
+  min-width: calc(32px * var(--ui-scale));
+  justify-content: center;
+  padding: calc(4px * var(--ui-scale)) calc(8px * var(--ui-scale));
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.win-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: transparent;
+}
+
+.win-btn-close:hover {
+  background: #e81123;
+  color: #fff;
 }
 
 .toolbar-btn {
