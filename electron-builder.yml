@@ -11,6 +11,11 @@ files:
   - out/**
   - package.json
 
+# 窗口图标随包分发:主进程从 process.resourcesPath 读取
+extraResources:
+  - from: resources/window-icon.png
+    to: window-icon.png
+
 # 主平台(§1.2):Windows ★★★;macOS 后期适配
 win:
   target:

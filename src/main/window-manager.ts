@@ -2,7 +2,7 @@
  * 窗口管理(FR-8 / §4.4):窗口创建、默认尺寸、几何记忆、多显示器定位、全屏。
  * 首次启动按主显示器工作区取 min(88%, 3360×1890);后续按记忆恢复。
  */
-import { BrowserWindow, screen } from 'electron'
+import { app, BrowserWindow, screen } from 'electron'
 import { join } from 'node:path'
 import { centerInWorkArea, clampBoundsToDisplay } from '../shared/geometry'
 import { configStore } from './config-store'
@@ -45,8 +45,14 @@ export function createMainWindow(): BrowserWindow {
     screen.getPrimaryDisplay()
   bounds = clampBoundsToDisplay(bounds, display.workArea)
 
+  // 窗口标题栏图标(lucide image 图标;打包后经 extraResources 置于 resourcesPath)
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'window-icon.png')
+    : join(__dirname, '../../resources/window-icon.png')
+
   const win = new BrowserWindow({
     ...bounds,
+    icon: iconPath,
     show: false,
     backgroundColor: '#121212',
     webPreferences: {
