@@ -102,6 +102,19 @@ export class ConfigStore {
   }
 
   /**
+   * 原子追加最近文件夹历史(§侧栏):去重置顶,上限 10。
+   * 主进程内同步读-改-写,避免渲染进程并发 getConfig+setConfig 竞态
+   * (连续打开来源时后写覆盖先写导致丢历史项)。返回更新后的列表。
+   */
+  addRecentFolder(path: string): string[] {
+    const recent = this.config.recentFolders.filter((p) => p !== path)
+    recent.unshift(path)
+    this.config.recentFolders = recent.slice(0, 10)
+    this.scheduleSave()
+    return this.config.recentFolders
+  }
+
+  /**
    * 原子移除最近文件夹历史(§侧栏删除)。
    * 主进程内同步读-过滤-写,避免渲染进程并发 getConfig+setConfig 竞态
    * (连续删除时后写覆盖先写导致被删项恢复)。返回删除后的列表。

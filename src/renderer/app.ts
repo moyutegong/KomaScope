@@ -48,7 +48,9 @@ function main(): void {
     onPagesChanged: (pages, currentIndex) => {
       sidebar.setPages(pages, currentIndex, controller.currentPage?.path ?? '')
       longView.setPages(pages, currentIndex)
-    }
+    },
+    // 拖入/打开新来源后立即刷新侧栏历史(无需重启,§侧栏)
+    onRecentChanged: (recent) => sidebar.setHistory(recent)
   })
 
   // --- 长图模式(§需求4):所有图片垂直拼接成单页无限下拉 ---
@@ -177,7 +179,10 @@ function main(): void {
   const statusbarEl = document.getElementById('statusbar') as HTMLElement
   const immersiveBtn = document.getElementById('btn-immersive') as HTMLButtonElement
   const autoHideBtn = document.getElementById('btn-auto-hide') as HTMLButtonElement
-  const EDGE_PX = 8
+  // 光标唤醒热区(顶部/底部/左侧边缘):须明显大于 0 但小于 UI 尺寸。
+  // 原 8px 在 4K 屏上难以精准触发,增大到 32px(工具栏高 52px、状态栏高 32px,
+  // CSS 像素,DPR 2 下物理 64px)使鼠标靠近边缘即可唤出,不再需要贴边。
+  const EDGE_PX = 32
   const HIDE_DELAY_MS = 500
   let immersive = false
   /** 非沉浸模式下 UI 自动隐藏(§需求3):与沉浸共用浮动机制 */

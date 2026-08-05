@@ -30,6 +30,8 @@ export interface ViewerCallbacks {
   onFolderChanged?: (folderPath: string) => void
   /** 页面列表/当前页变化(侧栏同步,§侧栏) */
   onPagesChanged?: (pages: PageItem[], currentIndex: number) => void
+  /** 最近打开历史变化(侧栏历史同步:拖入/打开新来源后刷新,§侧栏) */
+  onRecentChanged?: (recent: string[]) => void
 }
 
 export class ViewerController {
@@ -94,6 +96,9 @@ export class ViewerController {
     this.fitMode = config.fitMode
     if (config.fitMode === 'custom' && config.scale > 0) {
       this.lastCustomScale = config.scale
+      // 同步当前倍率:loadPage 的 applyFit('custom') 保留 transform.scale,
+      // 不同步则首次打开来源时恢复的缩放被 identity(=1) 覆盖
+      this.transform.scale = config.scale
     }
     this.setLocked(config.scaleLocked, false)
     this.layoutMode = config.layoutMode
@@ -168,13 +173,11 @@ export class ViewerController {
     void window.komascope.setConfig({ lastFolder: archivePath })
   }
 
-  /** 记录最近打开来源(侧栏历史,§侧栏):去重置顶,上限 10 */
+  /** 记录最近打开来源(侧栏历史,§侧栏):主进程原子去重置顶、上限 10;成功后回调刷新侧栏 */
   private async pushRecentFolder(path: string): Promise<void> {
     try {
-      const config = await window.komascope.getConfig()
-      const recent = config.recentFolders.filter((p) => p !== path)
-      recent.unshift(path)
-      void window.komascope.setConfig({ recentFolders: recent.slice(0, 10) })
+      const recent = await window.komascope.addRecentFolder(path)
+      this.callbacks.onRecentChanged?.(recent)
     } catch {
       // 历史记录失败不影响打开
     }
@@ -237,9 +240,10 @@ export class ViewerController {
     if (this.locked || (!this.bitmap && !this.tiled) || factor <= 0) return
     if (this.fitMode !== 'custom') {
       this.fitMode = 'custom'
-      this.lastCustomScale = this.transform.scale
     }
     this.transform = zoomAt(this.transform, anchor, factor)
+    // 始终记录最近一次自定义倍率(双击回到 custom 与翻页继承缩放均以它为准)
+    this.lastCustomScale = this.transform.scale
     this.afterTransformChange()
   }
 
@@ -406,7 +410,9 @@ export class ViewerController {
       }
       this.renderer.setVisible(true)
       if (this.fitMode === 'custom' && this.lastCustomScale !== null) {
-        this.setFitMode('custom')
+        // 翻页继承缩放(FR-6):custom 分支保留当前倍率,仅重新居中。
+        // 不能走 setFitMode('custom')——它会用 lastCustomScale 覆盖当前倍率。
+        this.applyFit('custom')
       } else {
         this.applyFit()
       }

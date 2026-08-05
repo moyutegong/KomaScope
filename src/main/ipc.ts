@@ -92,6 +92,10 @@ export function registerIpc(): void {
     if (!isNonEmptyString(path)) throw new Error('config:removeRecentFolder 需要非空路径')
     return configStore.removeRecentFolder(path)
   })
+  ipcMain.handle('config:addRecentFolder', (_event, path: unknown): string[] => {
+    if (!isNonEmptyString(path)) throw new Error('config:addRecentFolder 需要非空路径')
+    return configStore.addRecentFolder(path)
+  })
 
   // --- 菜单(语言切换后重建应用菜单) ---
   ipcMain.handle('menu:set-locale', (event, locale: unknown) => {
