@@ -31,8 +31,8 @@ jobs:
         run: pnpm run typecheck && pnpm test
 
       - name: Build installers (NSIS)
-        # 构建阶段不发布,由下方 action-gh-release 统一上传
-        run: pnpm build:win -- --publish never
+        # 构建阶段不发布(build:win 已内置 --publish never),由下方 action-gh-release 统一上传
+        run: pnpm build:win
 
       - name: Publish to GitHub Release
         uses: softprops/action-gh-release@v3

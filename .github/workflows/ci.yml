@@ -46,11 +46,11 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
-
       - name: Build installers (NSIS)
-        # --publish never:CI 上禁止 electron-builder 自动发布(push 无 tag 时
-        # 也会因 publish 配置尝试发布导致失败;发布由 release.yml 显式执行)
-        run: pnpm build:win -- --publish never
+        # build:win 已内置 --publish never:CI 上禁止 electron-builder 自动发布
+        # (electron-builder 26 检测到 publish 配置会隐式发布,缺少 GH_TOKEN 即失败;
+        # 发布由 release.yml 的 action-gh-release 显式执行)
+        run: pnpm build:win
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v7

@@ -21,3 +21,4 @@ Thumbs.db
 
 # 测试图片素材(不入库)
 testImg/
+dist-smoke/
