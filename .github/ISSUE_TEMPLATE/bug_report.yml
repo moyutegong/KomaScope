@@ -1,0 +1,69 @@
+name: 缺陷报告
+description: 报告 KomaScope 的问题(请尽量附上分辨率与系统缩放信息)
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢你花时间报告问题!请尽量完整填写以下信息,尤其是**显示器分辨率**与**系统缩放**,这对 4K 阅读器的调试至关重要。
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 发生了什么?预期应该是什么?
+      placeholder: 清晰、简洁地描述缺陷
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      description: 一步一步如何触发该问题(如:打开某文件夹 → 按 L → 滚轮)
+      placeholder: |
+        1. 打开文件夹 '...'
+        2. 按 'L' 锁定缩放
+        3. 滚动滚轮
+        4. 出现 '...'
+    validations:
+      required: true
+  - type: input
+    id: resolution
+    attributes:
+      label: 显示器分辨率
+      description: 例如 3840×2160、2560×1440
+    validations:
+      required: true
+  - type: dropdown
+    id: scaling
+    attributes:
+      label: 系统缩放(Windows 显示缩放)
+      options:
+        - 100%
+        - 125%
+        - 150%
+        - 175%
+        - 200%
+        - 其他(请在描述中注明)
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: 版本
+      description: 从状态栏或 about 获取;开发版请注明 commit
+    validations:
+      required: true
+  - type: input
+    id: image-info
+    attributes:
+      label: 相关图片信息
+      description: 图片格式与尺寸(如 jpg 3428×4820),是否多显示器
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 截图
+      description: 如有控制台报错或截图,粘贴在这里
+    validations:
+      required: false

@@ -1,0 +1,40 @@
+# electron-builder 配置(§9.2 / M5):Windows NSIS 安装包
+appId: com.komascope.app
+productName: KomaScope
+copyright: Copyright © 2025 KomaScope contributors
+
+directories:
+  buildResources: resources
+  output: dist
+
+files:
+  - out/**
+  - package.json
+
+# 主平台(§1.2):Windows ★★★;macOS 后期适配
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: resources/icon.png
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: KomaScope
+  deleteAppDataOnUninstall: false
+
+# macOS(后期适配,§1.2)
+mac:
+  target:
+    - dmg
+  category: public.app-category.graphics-design
+
+publish:
+  provider: github
+  owner: moyutegong
+  repo: KomaScope

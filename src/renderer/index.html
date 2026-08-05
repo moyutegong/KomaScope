@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' komascope-file: blob:; connect-src 'self' komascope-file:; style-src 'self' 'unsafe-inline'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>KomaScope</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="toolbar" class="toolbar">
+        <button id="btn-open-folder" class="toolbar-btn" type="button">打开文件夹</button>
+        <button id="btn-fit-screen" class="toolbar-btn" type="button" title="铺满当前显示器工作区">适应屏幕</button>
+        <span id="toolbar-folder" class="toolbar-folder">未打开文件夹</span>
+      </header>
+
+      <main id="viewport" class="viewport">
+        <canvas id="canvas" class="canvas" hidden></canvas>
+        <div id="placeholder" class="placeholder">
+          <p>KomaScope</p>
+          <p class="hint">打开文件夹或拖入图片开始阅读</p>
+        </div>
+      </main>
+
+      <footer id="statusbar" class="statusbar">
+        <span id="status-page">— / —</span>
+        <span id="status-size">—</span>
+        <span id="status-zoom">缩放 —</span>
+        <span id="status-lock" title="缩放锁定" hidden>🔒</span>
+      </footer>
+    </div>
+    <script type="module" src="./app.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,20 @@
+# 依赖与构建产物
+node_modules/
+out/
+dist/
+release/
+
+# 日志与系统文件
+*.log
+.DS_Store
+Thumbs.db
+
+# 编辑器
+.vscode/
+.idea/
+
+# 临时
+*.tmp
+
+# Reasonix 本地会话元数据
+.reasonix/
