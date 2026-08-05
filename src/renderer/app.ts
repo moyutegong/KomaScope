@@ -162,9 +162,14 @@ function main(): void {
     void setImmersive(!immersive)
   })
 
-  // 系统方式退出全屏(Win+Shift+Enter 等)→ 同步退出沉浸
+  // 系统方式进入/退出全屏(Win+Shift+Enter 等)→ 同步沉浸 UI
+  // (进入全屏也视为沉浸:菜单栏隐藏 + UI 浮动,与窗口沉浸一致)
   window.komascope.onFullScreenChanged((isFullScreen) => {
-    if (!isFullScreen && immersive) void setImmersive(false)
+    if (isFullScreen) {
+      if (!immersive) void setImmersive(true)
+    } else if (immersive) {
+      void setImmersive(false)
+    }
   })
 
   // 视口中心(+/− 缩放锚点,§5)
@@ -239,7 +244,6 @@ function main(): void {
           break
         case 'f':
         case 'F':
-        case 'F11':
           e.preventDefault()
           void setImmersive(!immersive)
           break
