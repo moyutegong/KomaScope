@@ -24,7 +24,8 @@ export const messages: Record<Locale, Messages> = {
     'status.zoom.empty': '缩放 —',
     'status.lockTitle': '缩放锁定',
     'error.loadPage': '页面加载失败:',
-    'error.loadConfig': '读取配置失败:'
+    'error.loadConfig': '读取配置失败:',
+    'error.openPath': '无法打开历史路径:'
   },
   en: {
     'app.title': 'KomaScope',
@@ -41,7 +42,8 @@ export const messages: Record<Locale, Messages> = {
     'status.zoom.empty': 'Zoom —',
     'status.lockTitle': 'Zoom locked',
     'error.loadPage': 'Failed to load page:',
-    'error.loadConfig': 'Failed to load config:'
+    'error.loadConfig': 'Failed to load config:',
+    'error.openPath': 'Cannot open history path:'
   }
 }
 

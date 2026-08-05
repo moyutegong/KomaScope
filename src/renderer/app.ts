@@ -39,11 +39,16 @@ function main(): void {
   const sidebar = new Sidebar({
     onOpenPath: (path) => {
       void (async () => {
-        const s = await window.komascope.statPath(path)
-        if (s.isDirectory) {
-          await controller.openFolder(path)
-        } else if (isArchiveFile(path)) {
-          await controller.openArchive(path)
+        try {
+          const s = await window.komascope.statPath(path)
+          if (s.isDirectory) {
+            await controller.openFolder(path)
+          } else if (isArchiveFile(path)) {
+            await controller.openArchive(path)
+          }
+        } catch {
+          // 历史路径可能已被删除/移动,静默失败并提示
+          console.error(t('error.openPath'), path)
         }
       })()
     },
