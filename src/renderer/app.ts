@@ -2,7 +2,7 @@
  * 渲染进程入口:装配 UI、ViewerController、输入映射与配置恢复。
  * M3 范围:平移/锚点缩放/适配切换/缩放锁定/快捷键(§5)。
  */
-import { BookOpen, FolderOpen, Lock, Maximize, createIcons } from 'lucide'
+import { BookOpen, FolderOpen, Lock, Maximize, PanelLeft, createIcons } from 'lucide'
 import type { ScanResult } from '../shared/types'
 import type { Point } from '../shared/transform-model'
 import { naturalCompare } from '../shared/natural-sort'
@@ -12,6 +12,7 @@ import { InputController, wheelDeltaToFactor } from './viewer/input-controller'
 import { ViewerController } from './viewer/viewer-controller'
 import { Toolbar } from './ui/toolbar'
 import { StatusBar } from './ui/statusbar'
+import { Sidebar } from './ui/sidebar'
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path
@@ -29,7 +30,24 @@ function main(): void {
   const statusbar = new StatusBar()
   const renderer = new ImageRenderer(document.getElementById('canvas') as HTMLCanvasElement)
   const controller = new ViewerController(renderer, statusbar, {
-    onFolderChanged: (folderPath) => toolbar.setFolder(folderPath)
+    onFolderChanged: (folderPath) => toolbar.setFolder(folderPath),
+    onPagesChanged: (pages, currentIndex) => {
+      sidebar.setPages(pages, currentIndex, controller.currentPage?.path ?? '')
+    }
+  })
+
+  const sidebar = new Sidebar({
+    onOpenPath: (path) => {
+      void (async () => {
+        const s = await window.komascope.statPath(path)
+        if (s.isDirectory) {
+          await controller.openFolder(path)
+        } else if (isArchiveFile(path)) {
+          await controller.openArchive(path)
+        }
+      })()
+    },
+    onSelectPage: (index) => controller.gotoPage(index)
   })
 
   // --- 4K / HiDPI(§4.4) ---
@@ -59,6 +77,7 @@ function main(): void {
     applyStaticText(locale)
     toolbar.refresh()
     statusbar.refresh()
+    sidebar.refresh()
   }
 
   const toolbar = new Toolbar({
@@ -71,6 +90,17 @@ function main(): void {
       const info = await window.komascope.getWindowInfo()
       await window.komascope.setWindowBounds(info.workArea)
     }
+  })
+
+  // 侧栏显示/隐藏切换
+  const sidebarEl = document.getElementById('sidebar') as HTMLElement
+  const sidebarBtn = document.getElementById('btn-sidebar') as HTMLButtonElement
+  sidebarBtn.addEventListener('click', () => {
+    sidebarEl.hidden = !sidebarEl.hidden
+    // 侧栏宽度变化触发 ResizeObserver 重算画布
+    const rect = viewport.getBoundingClientRect()
+    renderer.resize(rect.width, rect.height, window.devicePixelRatio)
+    controller.onViewportResize()
   })
 
   // 视口中心(+/− 缩放锚点,§5)
@@ -169,7 +199,7 @@ function main(): void {
   watchDpr()
 
   // lucide 图标:替换 [data-lucide] 元素为 SVG(在文案应用之前执行)
-  createIcons({ icons: { BookOpen, FolderOpen, Lock, Maximize } })
+  createIcons({ icons: { BookOpen, FolderOpen, Lock, Maximize, PanelLeft } })
 
   // 应用菜单动作(主进程 File/View 菜单,§5 快捷键等价)
   window.komascope.onMenuAction((action) => {
@@ -240,12 +270,13 @@ function main(): void {
     applyLocale(locale)
   })
 
-  // 恢复上次会话:语言 + 文件夹显示 + 适配模式/缩放锁定(FR-9)
+  // 恢复上次会话:语言 + 历史 + 文件夹显示 + 适配模式/缩放锁定(FR-9)
   void window.komascope
     .getConfig()
     .then((config) => {
       if (isLocale(config.locale)) applyLocale(config.locale)
       else applyLocale('zh')
+      sidebar.setHistory(config.recentFolders)
       if (config.lastFolder) toolbar.setFolder(config.lastFolder)
       controller.restoreConfig(config)
       // 按持久化语言重建应用菜单

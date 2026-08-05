@@ -22,7 +22,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   wheelAction: 'zoom',
   locale: 'zh',
   lastPage: 0,
-  layoutMode: 'single'
+  layoutMode: 'single',
+  recentFolders: []
 }
 
 /** 用默认值补齐缺失字段,并剔除未知字段(向前兼容) */
@@ -42,8 +43,22 @@ export function normalizeConfig(raw: unknown): AppConfig {
     lastPage: typeof src.lastPage === 'number' && Number.isFinite(src.lastPage) && src.lastPage >= 0
       ? Math.floor(src.lastPage)
       : DEFAULT_CONFIG.lastPage,
-    layoutMode: src.layoutMode === 'spread' ? 'spread' : 'single'
+    layoutMode: src.layoutMode === 'spread' ? 'spread' : 'single',
+    recentFolders: sanitizeRecentFolders(src.recentFolders)
   }
+
+/** 最近文件夹历史:字符串数组、去空、上限 10(§侧栏) */
+function sanitizeRecentFolders(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return []
+  const list: string[] = []
+  for (const item of raw) {
+    if (typeof item === 'string' && item.length > 0 && !list.includes(item)) {
+      list.push(item)
+      if (list.length >= 10) break
+    }
+  }
+  return list
+}
 }
 
 function sanitizeBounds(raw: unknown): AppConfig['windowBounds'] {

@@ -13,6 +13,9 @@
   <body>
     <div id="app">
       <header id="toolbar" class="toolbar">
+        <button id="btn-sidebar" class="toolbar-btn" type="button" title="切换侧栏 / Toggle sidebar">
+          <i data-lucide="panel-left"></i>
+        </button>
         <button id="btn-open-folder" class="toolbar-btn" type="button">
           <i data-lucide="folder-open"></i>
           <span data-i18n="toolbar.openFolder">打开文件夹</span>
@@ -24,14 +27,27 @@
         <span id="toolbar-folder" class="toolbar-folder" data-i18n="toolbar.noFolder">未打开文件夹</span>
       </header>
 
-      <main id="viewport" class="viewport">
-        <canvas id="canvas" class="canvas" hidden></canvas>
-        <div id="placeholder" class="placeholder">
-          <i data-lucide="book-open" class="placeholder-icon"></i>
-          <p data-i18n="app.title">KomaScope</p>
-          <p class="hint" data-i18n="placeholder.hint">打开文件夹或拖入图片开始阅读</p>
-        </div>
-      </main>
+      <div id="body" class="body">
+        <aside id="sidebar" class="sidebar">
+          <div class="sidebar-section">
+            <h3 class="sidebar-title" data-i18n="sidebar.history">历史</h3>
+            <div id="sidebar-history" class="sidebar-list"></div>
+          </div>
+          <div class="sidebar-section">
+            <h3 class="sidebar-title" data-i18n="sidebar.pages">页面</h3>
+            <div id="sidebar-pages" class="sidebar-list"></div>
+          </div>
+        </aside>
+
+        <main id="viewport" class="viewport">
+          <canvas id="canvas" class="canvas" hidden></canvas>
+          <div id="placeholder" class="placeholder">
+            <i data-lucide="book-open" class="placeholder-icon"></i>
+            <p data-i18n="app.title">KomaScope</p>
+            <p class="hint" data-i18n="placeholder.hint">打开文件夹或拖入图片开始阅读</p>
+          </div>
+        </main>
+      </div>
 
       <footer id="statusbar" class="statusbar">
         <span id="status-page">— / —</span>

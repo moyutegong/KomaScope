@@ -43,6 +43,8 @@ function mimeFromName(name: string): string {
 
 export interface ViewerCallbacks {
   onFolderChanged?: (folderPath: string) => void
+  /** 页面列表/当前页变化(侧栏同步,§侧栏) */
+  onPagesChanged?: (pages: PageItem[], currentIndex: number) => void
 }
 
 export class ViewerController {
@@ -82,6 +84,20 @@ export class ViewerController {
 
   get pageCount(): number {
     return this.pages.length
+  }
+
+  get currentPage(): PageItem | null {
+    return this.currentIndex >= 0 ? (this.pages[this.currentIndex] ?? null) : null
+  }
+
+  /** 侧栏页面列表(§侧栏) */
+  get pageList(): PageItem[] {
+    return [...this.pages]
+  }
+
+  /** 跳到指定页(侧栏点击,§侧栏) */
+  gotoPage(index: number): void {
+    void this.loadPage(index)
   }
 
   get isLocked(): boolean {
@@ -153,6 +169,7 @@ export class ViewerController {
     const initial = await this.restorePageIndex(folderPath, result.pages.length)
     this.setPages(result.pages, initial)
     this.callbacks.onFolderChanged?.(folderPath)
+    await this.pushRecentFolder(folderPath)
     void window.komascope.setConfig({ lastFolder: folderPath })
   }
 
@@ -162,7 +179,20 @@ export class ViewerController {
     const initial = await this.restorePageIndex(archivePath, result.pages.length)
     this.setPages(result.pages, initial)
     this.callbacks.onFolderChanged?.(archivePath)
+    await this.pushRecentFolder(archivePath)
     void window.komascope.setConfig({ lastFolder: archivePath })
+  }
+
+  /** 记录最近打开来源(侧栏历史,§侧栏):去重置顶,上限 10 */
+  private async pushRecentFolder(path: string): Promise<void> {
+    try {
+      const config = await window.komascope.getConfig()
+      const recent = config.recentFolders.filter((p) => p !== path)
+      recent.unshift(path)
+      void window.komascope.setConfig({ recentFolders: recent.slice(0, 10) })
+    } catch {
+      // 历史记录失败不影响打开
+    }
   }
 
   /** 书签恢复(§13 P1):同一来源且 lastPage 有效时从上次页码继续 */
@@ -295,6 +325,7 @@ export class ViewerController {
     this.pages = pages
     this.currentIndex = -1
     this.statusbar.setPage(0, pages.length)
+    this.callbacks.onPagesChanged?.(this.pages, 0)
     if (pages.length > 0) {
       void this.loadPage(Math.min(initialIndex, pages.length - 1))
     } else {
@@ -313,6 +344,7 @@ export class ViewerController {
     const page = this.pages[index]
     this.statusbar.setPage(index, this.pages.length)
     this.statusbar.setImageSize(page.width, page.height)
+    this.callbacks.onPagesChanged?.(this.pages, index)
     // 书签(§13 P1):记录当前页码(防抖落盘由 ConfigStore 处理)
     void window.komascope.setConfig({ lastPage: index })
     try {

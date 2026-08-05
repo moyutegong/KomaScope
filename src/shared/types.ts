@@ -48,6 +48,8 @@ export interface AppConfig {
   lastPage: number
   /** 阅读布局(§13 P1 双页跨页):single 单页 / spread 左右并排 */
   layoutMode: 'single' | 'spread'
+  /** 最近打开的文件夹/压缩包历史(侧栏,上限 10,最新在前) */
+  recentFolders: string[]
 }
 
 /** window:getInfo 返回值(4.2) */
