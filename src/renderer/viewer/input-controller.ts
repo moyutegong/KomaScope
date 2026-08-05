@@ -15,6 +15,8 @@ export interface InputControllerEvents {
   onWheelZoom: (x: number, y: number, deltaY: number) => void
   /** 滚轮翻页(光标在侧栏内时,向上=上一页,向下=下一页) */
   onWheelPage: (deltaY: number) => void
+  /** 长图模式 Ctrl+滚轮缩放(与普通滚轮滚动区分,§需求) */
+  onLongViewZoom: (factor: number) => void
   /** 双击(§5:fitScreen ↔ 上次自定义缩放) */
   onDoubleClick: () => void
   onKeyDown: (event: KeyboardEvent) => void
@@ -64,10 +66,17 @@ export class InputController {
     window.addEventListener(
       'wheel',
       (e) => {
-        // 光标在长图模式容器内:不阻止默认行为,让容器原生滚动浏览长条图片
+        // 光标在长图模式容器内:普通滚轮让容器原生滚动浏览长条图片;
+        // Ctrl+滚轮缩放(与滚动区分,§需求)
         const overLongView =
           e.target instanceof Element && e.target.closest('#long-view') !== null
-        if (overLongView) return
+        if (overLongView) {
+          if (e.ctrlKey) {
+            e.preventDefault()
+            this.events.onLongViewZoom(wheelDeltaToFactor(e.deltaY))
+          }
+          return
+        }
         e.preventDefault()
         // 光标在侧栏内:滚轮翻页(不缩放);否则锚点缩放
         const overSidebar = e.target instanceof Element && e.target.closest('#sidebar') !== null

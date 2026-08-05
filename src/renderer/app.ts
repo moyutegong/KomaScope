@@ -306,6 +306,7 @@ function main(): void {
       if (deltaY < 0) controller.prevPage()
       else controller.nextPage()
     },
+    onLongViewZoom: (factor) => longView.zoomBy(factor),
     onDoubleClick: () => controller.toggleFitScreenCustom(),
     onKeyDown: (e) => {
       switch (e.key) {

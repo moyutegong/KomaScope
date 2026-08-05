@@ -28,9 +28,19 @@ export class LongView {
   private readonly el: HTMLElement
   private currentIndex = -1
   private blobUrls = new Map<number, string>()
+  /** 缩放倍率(§需求 Ctrl+滚轮):1 = 适应视口宽,0.5~4 */
+  private scale = 1
 
   constructor(private readonly events: LongViewEvents) {
     this.el = document.getElementById('long-view') as HTMLElement
+  }
+
+  /** Ctrl+滚轮缩放:改变所有图片显示宽度,高度自适应;容器可横向滚动 */
+  zoomBy(factor: number): void {
+    this.scale = Math.min(4, Math.max(0.5, this.scale * factor))
+    for (const img of this.el.querySelectorAll<HTMLImageElement>('img')) {
+      img.style.width = `${(this.scale * 100).toFixed(1)}%`
+    }
   }
 
   /** 更新页面列表并重新渲染长图列表 */

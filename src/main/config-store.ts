@@ -24,7 +24,7 @@ export const DEFAULT_CONFIG: AppConfig = {
   lastPage: 0,
   layoutMode: 'single',
   recentFolders: [],
-  autoHide: false
+  autoHide: true
 }
 
 /** 用默认值补齐缺失字段,并剔除未知字段(向前兼容) */
@@ -46,7 +46,8 @@ export function normalizeConfig(raw: unknown): AppConfig {
       : DEFAULT_CONFIG.lastPage,
     layoutMode: src.layoutMode === 'spread' ? 'spread' : 'single',
     recentFolders: sanitizeRecentFolders(src.recentFolders),
-    autoHide: src.autoHide === true
+    // autoHide 默认开启(§需求):字段缺失(undefined)视为 true,仅显式 false 关闭
+    autoHide: src.autoHide !== false
   }
 
 /** 最近文件夹历史:字符串数组、去空、上限 10(§侧栏) */
