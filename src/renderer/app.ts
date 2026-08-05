@@ -391,14 +391,15 @@ function main(): void {
     applyLocale(locale)
   })
 
-  // 恢复上次会话:语言 + 历史 + 文件夹显示 + 适配模式/缩放锁定(FR-9)
+  // 恢复上次会话:语言 + 历史 + 适配模式/缩放锁定(FR-9)。
+  // 注意:不恢复 lastFolder 显示——文件夹名仅当用户点击历史或打开
+  // 新文件夹后才显示,关闭软件后自动清除(§用户需求)。
   void window.komascope
     .getConfig()
     .then((config) => {
       if (isLocale(config.locale)) applyLocale(config.locale)
       else applyLocale('zh')
       sidebar.setHistory(config.recentFolders)
-      if (config.lastFolder) toolbar.setFolder(config.lastFolder)
       controller.restoreConfig(config)
       // 按持久化语言重建应用菜单
       void window.komascope.setMenuLocale(isLocale(config.locale) ? config.locale : 'zh')
