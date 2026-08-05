@@ -8,6 +8,22 @@ export interface LongViewEvents {
   onSelectPage: (index: number) => void
 }
 
+/** 扩展名 → MIME(压缩包条目字节构造 Blob 时需要具体类型,img 才能解码) */
+const MIME_BY_EXT: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.bmp': 'image/bmp',
+  '.avif': 'image/avif'
+}
+
+function mimeFromName(name: string): string {
+  const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
+  return MIME_BY_EXT[ext] ?? 'application/octet-stream'
+}
+
 export class LongView {
   private readonly el: HTMLElement
   private currentIndex = -1
@@ -37,7 +53,9 @@ export class LongView {
       void window.komascope
         .readArchiveEntry(page.path, page.archiveEntry)
         .then((bytes) => {
-          const url = URL.createObjectURL(new Blob([new Uint8Array(bytes)], { type: 'image/*' }))
+          const url = URL.createObjectURL(
+            new Blob([new Uint8Array(bytes)], { type: mimeFromName(page.name) })
+          )
           this.blobUrls.set(index, url)
           const img = this.el.querySelector<HTMLImageElement>(`img[data-index="${index}"]`)
           if (img) img.src = url

@@ -64,6 +64,10 @@ export class InputController {
     window.addEventListener(
       'wheel',
       (e) => {
+        // 光标在长图模式容器内:不阻止默认行为,让容器原生滚动浏览长条图片
+        const overLongView =
+          e.target instanceof Element && e.target.closest('#long-view') !== null
+        if (overLongView) return
         e.preventDefault()
         // 光标在侧栏内:滚轮翻页(不缩放);否则锚点缩放
         const overSidebar = e.target instanceof Element && e.target.closest('#sidebar') !== null

@@ -46,6 +46,7 @@ function main(): void {
     }
   })
   const canvasEl = document.getElementById('canvas') as HTMLElement
+  const placeholderEl = document.getElementById('placeholder') as HTMLElement
   const viewModeBtn = document.getElementById('btn-view-mode') as HTMLButtonElement
   let viewMode: 'page' | 'long' = 'page'
 
@@ -54,6 +55,9 @@ function main(): void {
     const long = mode === 'long'
     longView.setVisible(long)
     canvasEl.hidden = long
+    // placeholder 覆盖在 long-view 之上会拦截点击,切换时同步显隐;
+    // 退出长图模式后 placeholder 仅在没有图片时显示(避免遮住 canvas)
+    placeholderEl.hidden = long ? true : controller.pageCount === 0
     viewModeBtn.classList.toggle('toolbar-btn-active', long)
     if (!long) controller.applyFit()
   }
