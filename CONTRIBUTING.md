@@ -54,4 +54,4 @@ npm run typecheck && npm run lint && npm test
 
 ## 许可证
 
-提交贡献即表示同意你的贡献以 [Apache-2.0](./LICENSE) 许可证发布。
+提交贡献即表示同意你的贡献以 [MIT](./LICENSE) 许可证发布。

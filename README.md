@@ -2,7 +2,7 @@
 
 **English** | [简体中文](./README.zh-CN.md)
 
-An open-source, lightweight desktop comic reader optimized for **4K displays (3840×2160)**. Read local comic pages at near-native resolution with pixel-perfect clarity. Fully offline, single-machine tool. Licensed under [Apache-2.0](./LICENSE).
+An open-source, lightweight desktop comic reader optimized for **4K displays (3840×2160)**. Read local comic pages at near-native resolution with pixel-perfect clarity. Fully offline, single-machine tool. Licensed under [MIT](./LICENSE).
 
 > **Status**: v0.2.0 released — Electron + TypeScript app runs in dev mode (`pnpm dev`). Features: folder & archive (zip/cbz) browsing with natural sort, drag & drop import, first-screen rendering, page turning & two-page spread, pan, cursor-anchored wheel zoom, five fit modes, zoom lock, long-strip mode (endless vertical strip + Ctrl+wheel zoom), bookmarks & reading progress, image rotation & mirroring, HiDPI (devicePixelRatio-aware canvas + UI scale), tile rendering for >8192px images, adjacent-page pre-decoding, config persistence, **frameless window by default** (immersive = non-fullscreen frameless; rebuilds with a frame to access the system menu), **sidebar** (history management + image list + adjustable split), **auto-hide UI**, lucide icons, bilingual app menu and zh/en switching. Core pure logic (transform model, natural sort, image-size, window geometry, tile LRU & grid, i18n, config store, archive parsing) is unit-tested (70 tests); GitHub Actions CI/CD (daily tests + v* tag auto build/release) and community files are in place. See [DEVELOPMENT.en.md](./DEVELOPMENT.en.md) for the detailed development plan (Chinese: [DEVELOPMENT.md](./DEVELOPMENT.md)).
 
@@ -87,4 +87,4 @@ Issues and pull requests are welcome! Please read [CONTRIBUTING.md](./CONTRIBUTI
 
 ## License
 
-[Apache-2.0](./LICENSE)
+[MIT](./LICENSE)

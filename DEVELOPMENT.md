@@ -1,6 +1,6 @@
 # **KomaScope**开发文档
 
-> 面向 4K 分辨率屏幕优化的开源轻量漫画阅读器(Apache-2.0)
+> 面向 4K 分辨率屏幕优化的开源轻量漫画阅读器(MIT)
 
 ---
 
@@ -14,7 +14,7 @@
 - 窗口与图片的**位置、大小**调整方便,符合 4K 大屏下的交互习惯;
 - 支持**锁定缩放比例**,避免误操作导致图片变形或比例错乱;
 - 面向本地文件夹与拖拽导入,离线可用,单机工具;
-- 开源项目(Apache-2.0),接受社区贡献,工程化约定见 §9 开源工程化。
+- 开源项目(MIT),接受社区贡献,工程化约定见 §9 开源工程化。
 
 ### 1.2 平台目标
 
@@ -232,7 +232,7 @@ KomaScope/
 ├── electron.vite.config.ts
 ├── electron-builder.yml
 ├── tsconfig.json
-├── LICENSE                       # Apache-2.0
+├── LICENSE                       # MIT
 ├── CONTRIBUTING.md               # 贡献指南
 ├── .github/
 │   ├── ISSUE_TEMPLATE/           # 缺陷报告/功能请求模板
@@ -305,7 +305,7 @@ KomaScope/
 
 ### 9.1 许可与版本策略
 
-- 许可证:**Apache-2.0**(含专利授权,对商用与二次分发友好);
+- 许可证:**MIT**(极简宽松,对商用与二次分发友好);
 - 版本号:语义化版本 `MAJOR.MINOR.PATCH`,以 `v*` tag 触发发布;
 - 提交规范:Conventional Commits(`feat:` / `fix:` / `perf:` / `docs:` ...),便于自动生成变更日志。
 

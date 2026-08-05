@@ -4,7 +4,7 @@
   "description": "An open-source lightweight comic reader optimized for 4K displays",
   "main": "./out/main/index.js",
   "author": "KomaScope contributors",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",

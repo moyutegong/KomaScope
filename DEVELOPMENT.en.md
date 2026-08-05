@@ -1,6 +1,6 @@
 # **KomaScope** Development Document
 
-> An open-source lightweight comic reader optimized for **4K resolution** displays (Apache-2.0)
+> An open-source lightweight comic reader optimized for **4K resolution** displays (MIT)
 
 ---
 
@@ -14,7 +14,7 @@ A lightweight open-source desktop comic reader whose core optimization target is
 - Window and image **position/size** adjustments are convenient, matching interaction habits on large 4K screens;
 - Supports **aspect-ratio locking** to prevent accidental distortion or scale corruption;
 - Works with local folders and drag-and-drop import — fully offline, single-machine tool;
-- Open-source project (Apache-2.0), open to community contributions; see §9 Open-Source Engineering for conventions.
+- Open-source project (MIT), open to community contributions; see §9 Open-Source Engineering for conventions.
 
 ### 1.2 Platform Targets
 
@@ -232,7 +232,7 @@ KomaScope/
 ├── electron.vite.config.ts
 ├── electron-builder.yml
 ├── tsconfig.json
-├── LICENSE                       # Apache-2.0
+├── LICENSE                       # MIT
 ├── CONTRIBUTING.md               # contribution guide
 ├── .github/
 │   ├── ISSUE_TEMPLATE/           # bug report / feature request templates
@@ -305,7 +305,7 @@ Open folder (button/drag & drop)
 
 ### 9.1 License & Versioning
 
-- License: **Apache-2.0** (includes patent grant; friendly to commercial reuse and redistribution);
+- License: **MIT** (minimal permissive; friendly to commercial reuse and redistribution);
 - Versioning: Semantic Versioning `MAJOR.MINOR.PATCH`; releases triggered by `v*` tags;
 - Commit convention: Conventional Commits (`feat:` / `fix:` / `perf:` / `docs:` ...), enabling auto-generated changelogs.
 
