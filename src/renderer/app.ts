@@ -137,20 +137,45 @@ function main(): void {
     }, HIDE_DELAY_MS)
   }
 
-  // 边缘检测:鼠标移近顶部/底部/左侧边缘时滑出对应 UI,移开延时隐藏
+  const cancelHide = (): void => {
+    if (hideTimer !== null) {
+      clearTimeout(hideTimer)
+      hideTimer = null
+    }
+  }
+
+  /** 鼠标是否位于任一浮动 UI 元素内(沉浸模式隐藏判断) */
+  const isOverUi = (e: MouseEvent): boolean =>
+    e.target instanceof HTMLElement &&
+    e.target.closest('.toolbar, .statusbar, .sidebar') !== null
+
+  // 边缘检测:鼠标移近顶部/底部/左侧边缘时滑出对应 UI;
+  // 离开边缘或 UI 后 scheduleHide 延时隐藏(移出 UI 后即使鼠标静止,
+  // mouseleave 也会启动计时,修复"移出后不自动隐藏")
   window.addEventListener('mousemove', (e) => {
     if (!document.body.classList.contains('immersive')) return
     const nearTop = e.clientY <= EDGE_PX
     const nearBottom = e.clientY >= window.innerHeight - EDGE_PX
     const nearLeft = e.clientX <= EDGE_PX
-    if (hideTimer !== null) {
-      clearTimeout(hideTimer)
-      hideTimer = null
+    if (nearTop || nearBottom || nearLeft) {
+      cancelHide()
+      if (nearTop) setUiVisible(toolbarEl, true)
+      if (nearBottom) setUiVisible(statusbarEl, true)
+      if (nearLeft) setUiVisible(sidebarEl, true)
+    } else if (!isOverUi(e)) {
+      scheduleHide()
     }
-    if (nearTop) setUiVisible(toolbarEl, true)
-    if (nearBottom) setUiVisible(statusbarEl, true)
-    if (nearLeft) setUiVisible(sidebarEl, true)
-    if (!nearTop && !nearBottom && !nearLeft) scheduleHide()
+  })
+
+  // 鼠标进入 UI 保持显示;移出 UI 开始隐藏计时(即使鼠标随后静止)
+  for (const el of [toolbarEl, statusbarEl, sidebarEl]) {
+    el.addEventListener('mouseenter', cancelHide)
+    el.addEventListener('mouseleave', scheduleHide)
+  }
+
+  // 鼠标离开窗口:立即隐藏全部 UI
+  window.addEventListener('mouseleave', () => {
+    if (document.body.classList.contains('immersive')) hideAllUi()
   })
 
   const setImmersive = async (enabled: boolean): Promise<void> => {
@@ -205,7 +230,7 @@ function main(): void {
           }
         } catch {
           // 拖入路径可能已被删除/移动,避免未捕获 rejection
-          console.error(t('error.openPath'), paths[0])
+          console.error(t('error.openDroppedPath'), paths[0])
         }
       })()
     },
