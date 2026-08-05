@@ -23,7 +23,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   locale: 'zh',
   lastPage: 0,
   layoutMode: 'single',
-  recentFolders: []
+  recentFolders: [],
+  autoHide: false
 }
 
 /** 用默认值补齐缺失字段,并剔除未知字段(向前兼容) */
@@ -44,7 +45,8 @@ export function normalizeConfig(raw: unknown): AppConfig {
       ? Math.floor(src.lastPage)
       : DEFAULT_CONFIG.lastPage,
     layoutMode: src.layoutMode === 'spread' ? 'spread' : 'single',
-    recentFolders: sanitizeRecentFolders(src.recentFolders)
+    recentFolders: sanitizeRecentFolders(src.recentFolders),
+    autoHide: src.autoHide === true
   }
 
 /** 最近文件夹历史:字符串数组、去空、上限 10(§侧栏) */

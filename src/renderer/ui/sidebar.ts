@@ -16,6 +16,9 @@ export interface SidebarEvents {
 export class Sidebar {
   private readonly historyEl: HTMLElement
   private readonly pagesEl: HTMLElement
+  private readonly historySectionEl: HTMLElement
+  private readonly pagesSectionEl: HTMLElement
+  private readonly dividerEl: HTMLElement
   private history: string[] = []
   private pages: PageItem[] = []
   private currentIndex = -1
@@ -24,6 +27,41 @@ export class Sidebar {
   constructor(private readonly events: SidebarEvents) {
     this.historyEl = document.getElementById('sidebar-history') as HTMLElement
     this.pagesEl = document.getElementById('sidebar-pages') as HTMLElement
+    this.historySectionEl = document.getElementById('sidebar-history-section') as HTMLElement
+    this.pagesSectionEl = document.getElementById('sidebar-pages-section') as HTMLElement
+    this.dividerEl = document.getElementById('sidebar-divider') as HTMLElement
+    this.initDivider()
+  }
+
+  /** 可拖拽分隔条:调整历史/图片区块垂直占比,持久化到 localStorage */
+  private initDivider(): void {
+    const KEY = 'komascope.sidebar.historyRatio'
+    let ratio = Math.min(0.85, Math.max(0.15, parseFloat(localStorage.getItem(KEY) ?? '0.4')))
+    const applyRatio = (r: number): void => {
+      this.historySectionEl.style.flex = `0 0 ${(r * 100).toFixed(1)}%`
+      this.pagesSectionEl.style.flex = '1 1 auto'
+    }
+    applyRatio(ratio)
+
+    this.dividerEl.addEventListener('mousedown', (e) => {
+      e.preventDefault()
+      const sidebarEl = this.dividerEl.parentElement as HTMLElement
+      const startY = e.clientY
+      const startRatio = ratio
+      const onMove = (ev: MouseEvent): void => {
+        const rect = sidebarEl.getBoundingClientRect()
+        if (rect.height <= 0) return
+        ratio = Math.min(0.85, Math.max(0.15, startRatio + (ev.clientY - startY) / rect.height))
+        applyRatio(ratio)
+      }
+      const onUp = (): void => {
+        window.removeEventListener('mousemove', onMove)
+        window.removeEventListener('mouseup', onUp)
+        localStorage.setItem(KEY, String(ratio))
+      }
+      window.addEventListener('mousemove', onMove)
+      window.addEventListener('mouseup', onUp)
+    })
   }
 
   /** 更新历史列表(打开来源后 / 启动时) */

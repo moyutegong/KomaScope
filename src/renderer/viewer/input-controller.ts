@@ -13,6 +13,8 @@ export interface InputControllerEvents {
   onPanEnd?: () => void
   /** 滚轮:光标位置 + 滚动增量(锚点缩放用) */
   onWheelZoom: (x: number, y: number, deltaY: number) => void
+  /** 滚轮翻页(光标在侧栏内时,向上=上一页,向下=下一页) */
+  onWheelPage: (deltaY: number) => void
   /** 双击(§5:fitScreen ↔ 上次自定义缩放) */
   onDoubleClick: () => void
   onKeyDown: (event: KeyboardEvent) => void
@@ -63,7 +65,13 @@ export class InputController {
       'wheel',
       (e) => {
         e.preventDefault()
-        this.events.onWheelZoom(e.clientX, e.clientY, e.deltaY)
+        // 光标在侧栏内:滚轮翻页(不缩放);否则锚点缩放
+        const overSidebar = e.target instanceof Element && e.target.closest('#sidebar') !== null
+        if (overSidebar) {
+          this.events.onWheelPage(e.deltaY)
+        } else {
+          this.events.onWheelZoom(e.clientX, e.clientY, e.deltaY)
+        }
       },
       { passive: false }
     )

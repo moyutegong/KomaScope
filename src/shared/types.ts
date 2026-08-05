@@ -50,6 +50,8 @@ export interface AppConfig {
   layoutMode: 'single' | 'spread'
   /** 最近打开的文件夹/压缩包历史(侧栏,上限 10,最新在前) */
   recentFolders: string[]
+  /** 非沉浸模式下侧栏/工具栏/状态栏自动隐藏(浮动唤出,§需求3) */
+  autoHide: boolean
 }
 
 /** window:getInfo 返回值(4.2) */

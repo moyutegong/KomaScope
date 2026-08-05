@@ -28,23 +28,31 @@
           <i data-lucide="scan"></i>
           <span data-i18n="toolbar.immersive">沉浸模式</span>
         </button>
+        <button id="btn-auto-hide" class="toolbar-btn" type="button" title="自动隐藏工具栏/侧栏 / Auto-hide UI">
+          <i data-lucide="mouse-pointer-click"></i>
+        </button>
+        <button id="btn-view-mode" class="toolbar-btn" type="button" title="长图模式 / Long strip">
+          <i data-lucide="rows-3"></i>
+        </button>
         <span id="toolbar-folder" class="toolbar-folder" data-i18n="toolbar.noFolder">未打开文件夹</span>
       </header>
 
       <div id="body" class="body">
         <aside id="sidebar" class="sidebar">
-          <div class="sidebar-section">
+          <div class="sidebar-section" id="sidebar-history-section">
             <h3 class="sidebar-title" data-i18n="sidebar.history">历史</h3>
             <div id="sidebar-history" class="sidebar-list"></div>
           </div>
-          <div class="sidebar-section">
-            <h3 class="sidebar-title" data-i18n="sidebar.pages">页面</h3>
+          <div id="sidebar-divider" class="sidebar-divider" title="拖动调整区块比例"></div>
+          <div class="sidebar-section" id="sidebar-pages-section">
+            <h3 class="sidebar-title" data-i18n="sidebar.pages">图片</h3>
             <div id="sidebar-pages" class="sidebar-list"></div>
           </div>
         </aside>
 
         <main id="viewport" class="viewport">
           <canvas id="canvas" class="canvas" hidden></canvas>
+          <div id="long-view" class="long-view" hidden></div>
           <div id="placeholder" class="placeholder">
             <i data-lucide="book-open" class="placeholder-icon"></i>
             <p data-i18n="app.title">KomaScope</p>

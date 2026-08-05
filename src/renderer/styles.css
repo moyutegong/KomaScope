@@ -128,6 +128,20 @@ button:focus-visible {
   border-top: 1px solid var(--border);
 }
 
+/* 侧栏区块:历史/图片占比可拖拽调整(§需求2) */
+.sidebar-divider {
+  flex-shrink: 0;
+  height: calc(6px * var(--ui-scale));
+  cursor: ns-resize;
+  background: #2a2a2a;
+  border-top: 1px solid #3a3a3a;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.sidebar-divider:hover {
+  background: var(--accent);
+}
+
 .sidebar-title {
   flex-shrink: 0;
   padding: calc(16px * var(--ui-scale)) calc(16px * var(--ui-scale)) calc(8px * var(--ui-scale));
@@ -281,6 +295,40 @@ button:focus-visible {
   white-space: nowrap;
 }
 
+/* --- 长图模式(§需求4:所有图片垂直拼接,单页无限下拉) --- */
+.long-view {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  background: #000;
+}
+
+.long-item {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.long-item img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.long-item-active {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.toolbar-btn-active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
 /* --- 视口 --- */
 .viewport {
   position: relative;
@@ -395,7 +443,10 @@ button:focus-visible {
 /* --- 沉浸模式动画保持不变 --- */
 body.immersive .toolbar,
 body.immersive .statusbar,
-body.immersive .sidebar {
+body.immersive .sidebar,
+body.auto-hide .toolbar,
+body.auto-hide .statusbar,
+body.auto-hide .sidebar {
   position: fixed;
   z-index: 100;
   transition:
@@ -406,21 +457,24 @@ body.immersive .sidebar {
   box-shadow: var(--shadow-float);
 }
 
-body.immersive .toolbar {
+body.immersive .toolbar,
+body.auto-hide .toolbar {
   top: 0;
   left: 0;
   right: 0;
   transform: translateY(-100%);
 }
 
-body.immersive .statusbar {
+body.immersive .statusbar,
+body.auto-hide .statusbar {
   bottom: 0;
   left: 0;
   right: 0;
   transform: translateY(100%);
 }
 
-body.immersive .sidebar {
+body.immersive .sidebar,
+body.auto-hide .sidebar {
   top: 0;
   bottom: 0;
   left: 0;
@@ -429,7 +483,10 @@ body.immersive .sidebar {
 
 body.immersive .toolbar.ui-visible,
 body.immersive .statusbar.ui-visible,
-body.immersive .sidebar.ui-visible {
+body.immersive .sidebar.ui-visible,
+body.auto-hide .toolbar.ui-visible,
+body.auto-hide .statusbar.ui-visible,
+body.auto-hide .sidebar.ui-visible {
   transform: translate(0, 0);
   opacity: 1;
   pointer-events: auto;

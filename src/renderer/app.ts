@@ -2,7 +2,7 @@
  * 渲染进程入口:装配 UI、ViewerController、输入映射与配置恢复。
  * M3 范围:平移/锚点缩放/适配切换/缩放锁定/快捷键(§5)。
  */
-import { BookOpen, FolderOpen, Lock, Maximize, PanelLeft, Scan, createIcons } from 'lucide'
+import { BookOpen, FolderOpen, Lock, Maximize, MousePointerClick, PanelLeft, Rows3, Scan, createIcons } from 'lucide'
 import type { ScanResult } from '../shared/types'
 import type { Point } from '../shared/transform-model'
 import { naturalCompare } from '../shared/natural-sort'
@@ -13,6 +13,7 @@ import { ViewerController } from './viewer/viewer-controller'
 import { Toolbar } from './ui/toolbar'
 import { StatusBar } from './ui/statusbar'
 import { Sidebar } from './ui/sidebar'
+import { LongView } from './ui/long-view'
 
 function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path
@@ -33,7 +34,32 @@ function main(): void {
     onFolderChanged: (folderPath) => toolbar.setFolder(folderPath),
     onPagesChanged: (pages, currentIndex) => {
       sidebar.setPages(pages, currentIndex, controller.currentPage?.path ?? '')
+      longView.setPages(pages, currentIndex)
     }
+  })
+
+  // --- 长图模式(§需求4):所有图片垂直拼接成单页无限下拉 ---
+  const longView = new LongView({
+    onSelectPage: (index) => {
+      controller.gotoPage(index)
+      setViewMode('page')
+    }
+  })
+  const canvasEl = document.getElementById('canvas') as HTMLElement
+  const viewModeBtn = document.getElementById('btn-view-mode') as HTMLButtonElement
+  let viewMode: 'page' | 'long' = 'page'
+
+  const setViewMode = (mode: 'page' | 'long'): void => {
+    viewMode = mode
+    const long = mode === 'long'
+    longView.setVisible(long)
+    canvasEl.hidden = long
+    viewModeBtn.classList.toggle('toolbar-btn-active', long)
+    if (!long) controller.applyFit()
+  }
+
+  viewModeBtn.addEventListener('click', () => {
+    setViewMode(viewMode === 'page' ? 'long' : 'page')
   })
 
   const sidebar = new Sidebar({
@@ -119,16 +145,23 @@ function main(): void {
     controller.onViewportResize()
   })
 
-  // --- 沉浸模式(OS 全屏 + 隐藏菜单栏 + UI 浮动隐藏) ---
+  // --- 沉浸模式 / 自动隐藏(OS 全屏 + 隐藏菜单栏 + UI 浮动隐藏) ---
   const toolbarEl = document.getElementById('toolbar') as HTMLElement
   const statusbarEl = document.getElementById('statusbar') as HTMLElement
   const immersiveBtn = document.getElementById('btn-immersive') as HTMLButtonElement
+  const autoHideBtn = document.getElementById('btn-auto-hide') as HTMLButtonElement
   const EDGE_PX = 8
   const HIDE_DELAY_MS = 500
   let immersive = false
+  /** 非沉浸模式下 UI 自动隐藏(§需求3):与沉浸共用浮动机制 */
+  let autoHide = false
   let hideTimer: number | null = null
   /** 最近一次沉浸意图时间戳:抑制本应用触发的滞后 fullscreen:changed 事件 */
   let lastImmersiveIntentAt = 0
+
+  /** 浮动隐藏是否生效(沉浸或 autoHide) */
+  const floatingActive = (): boolean =>
+    document.body.classList.contains('immersive') || document.body.classList.contains('auto-hide')
 
   const setUiVisible = (el: HTMLElement, visible: boolean): void => {
     el.classList.toggle('ui-visible', visible)
@@ -141,13 +174,13 @@ function main(): void {
   }
 
   const scheduleHide = (): void => {
-    // 沉浸守卫:非沉浸态不启动计时;退出后残留计时器到期时若已重新进入,
+    // 浮动守卫:非浮动态不启动计时;退出后残留计时器到期时若已重新进入,
     // 由 mouseenter 重新取消,此处守卫避免空转与误隐藏
-    if (!document.body.classList.contains('immersive')) return
+    if (!floatingActive()) return
     if (hideTimer !== null) clearTimeout(hideTimer)
     hideTimer = window.setTimeout(() => {
       hideTimer = null
-      if (document.body.classList.contains('immersive')) hideAllUi()
+      if (floatingActive()) hideAllUi()
     }, HIDE_DELAY_MS)
   }
 
@@ -169,7 +202,7 @@ function main(): void {
   // 离开边缘或 UI 后 scheduleHide 延时隐藏(移出 UI 后即使鼠标静止,
   // mouseleave 也会启动计时,修复"移出后不自动隐藏")
   window.addEventListener('mousemove', (e) => {
-    if (!document.body.classList.contains('immersive')) return
+    if (!floatingActive()) return
     const nearTop = e.clientY <= EDGE_PX
     const nearBottom = e.clientY >= window.innerHeight - EDGE_PX
     const nearLeft = e.clientX <= EDGE_PX
@@ -191,7 +224,7 @@ function main(): void {
 
   // 鼠标离开窗口:立即隐藏全部 UI
   window.addEventListener('mouseleave', () => {
-    if (document.body.classList.contains('immersive')) hideAllUi()
+    if (floatingActive()) hideAllUi()
   })
 
   const setImmersive = async (enabled: boolean): Promise<void> => {
@@ -204,6 +237,18 @@ function main(): void {
 
   immersiveBtn.addEventListener('click', () => {
     void setImmersive(!immersive)
+  })
+
+  // 非沉浸模式自动隐藏开关(§需求3):开启后侧栏/工具栏/状态栏浮动隐藏
+  const setAutoHide = (enabled: boolean): void => {
+    autoHide = enabled
+    document.body.classList.toggle('auto-hide', enabled)
+    void window.komascope.setConfig({ autoHide: enabled })
+    if (enabled) hideAllUi()
+  }
+
+  autoHideBtn.addEventListener('click', () => {
+    setAutoHide(!autoHide)
   })
 
   // 系统方式进入/退出全屏(Win+Shift+Enter 等)→ 同步沉浸 UI。
@@ -252,6 +297,11 @@ function main(): void {
     },
     onPanMove: (dx, dy) => controller.translateBy(dx, dy),
     onWheelZoom: (x, y, deltaY) => controller.zoomAt({ x, y }, wheelDeltaToFactor(deltaY)),
+    onWheelPage: (deltaY) => {
+      // 侧栏内滚轮:向上=上一页,向下=下一页(与图片列表滚动方向一致)
+      if (deltaY < 0) controller.prevPage()
+      else controller.nextPage()
+    },
     onDoubleClick: () => controller.toggleFitScreenCustom(),
     onKeyDown: (e) => {
       switch (e.key) {
@@ -320,7 +370,7 @@ function main(): void {
   watchDpr()
 
   // lucide 图标:替换 [data-lucide] 元素为 SVG(在文案应用之前执行)
-  createIcons({ icons: { BookOpen, FolderOpen, Lock, Maximize, PanelLeft, Scan } })
+  createIcons({ icons: { BookOpen, FolderOpen, Lock, Maximize, MousePointerClick, PanelLeft, Rows3, Scan } })
 
   // 应用菜单动作(主进程 File/View 菜单,§5 快捷键等价)
   window.komascope.onMenuAction((action) => {
@@ -401,6 +451,7 @@ function main(): void {
       else applyLocale('zh')
       sidebar.setHistory(config.recentFolders)
       controller.restoreConfig(config)
+      if (config.autoHide) setAutoHide(true)
       // 按持久化语言重建应用菜单
       void window.komascope.setMenuLocale(isLocale(config.locale) ? config.locale : 'zh')
     })
