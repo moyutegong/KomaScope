@@ -4,6 +4,7 @@
  */
 import { app, BrowserWindow } from 'electron'
 import { registerFileProtocol, registerFileSchemePrivilege, registerIpc } from './ipc'
+import { buildAppMenu } from './menu'
 import { createMainWindow } from './window-manager'
 import { configStore } from './config-store'
 
@@ -13,7 +14,9 @@ registerFileSchemePrivilege()
 app.whenReady().then(() => {
   registerFileProtocol()
   registerIpc()
-  createMainWindow()
+  const win = createMainWindow()
+  // 应用菜单(双语,替代默认英文菜单)
+  buildAppMenu(configStore.get().locale as 'zh' | 'en', win)
 
   // macOS:点击 Dock 图标且无窗口时重建窗口
   app.on('activate', () => {

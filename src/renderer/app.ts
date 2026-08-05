@@ -2,11 +2,11 @@
  * 渲染进程入口:装配 UI、ViewerController、输入映射与配置恢复。
  * M3 范围:平移/锚点缩放/适配切换/缩放锁定/快捷键(§5)。
  */
-import { BookOpen, FolderOpen, Languages, Lock, Maximize, createIcons } from 'lucide'
+import { BookOpen, FolderOpen, Lock, Maximize, createIcons } from 'lucide'
 import type { ScanResult } from '../shared/types'
 import type { Point } from '../shared/transform-model'
 import { naturalCompare } from '../shared/natural-sort'
-import { applyStaticText, getLocale, isLocale, setLocale, t } from './i18n'
+import { applyStaticText, isLocale, setLocale, t } from './i18n'
 import { ImageRenderer } from './viewer/image-renderer'
 import { InputController, wheelDeltaToFactor } from './viewer/input-controller'
 import { ViewerController } from './viewer/viewer-controller'
@@ -45,7 +45,7 @@ function main(): void {
     })
   }
 
-  // 语言切换(中英文):应用文案 → 持久化 → 刷新动态组件
+  // 语言切换(中英文):应用文案 → 持久化 + 主进程菜单重建 → 刷新动态组件
   const applyLocale = (locale: 'zh' | 'en'): void => {
     setLocale(locale)
     applyStaticText(locale)
@@ -62,11 +62,6 @@ function main(): void {
       // 一键"适应屏幕":铺满当前显示器工作区(FR-8)
       const info = await window.komascope.getWindowInfo()
       await window.komascope.setWindowBounds(info.workArea)
-    },
-    onToggleLang: () => {
-      const next = getLocale() === 'zh' ? 'en' : 'zh'
-      applyLocale(next)
-      void window.komascope.setConfig({ locale: next })
     }
   })
 
@@ -163,7 +158,56 @@ function main(): void {
   watchDpr()
 
   // lucide 图标:替换 [data-lucide] 元素为 SVG(在文案应用之前执行)
-  createIcons({ icons: { BookOpen, FolderOpen, Languages, Lock, Maximize } })
+  createIcons({ icons: { BookOpen, FolderOpen, Lock, Maximize } })
+
+  // 应用菜单动作(主进程 File/View 菜单,§5 快捷键等价)
+  window.komascope.onMenuAction((action) => {
+    switch (action) {
+      case 'open-folder':
+        void window.komascope.openFolderDialog().then((result) => {
+          if (result) {
+            toolbar.setFolder(result.folderPath)
+            void controller.openFolder(result.folderPath)
+          }
+        })
+        break
+      case 'prev-page':
+        controller.prevPage()
+        break
+      case 'next-page':
+        controller.nextPage()
+        break
+      case 'zoom-in':
+        controller.zoomAt(viewportCenter(), 1.25)
+        break
+      case 'zoom-out':
+        controller.zoomAt(viewportCenter(), 0.8)
+        break
+      case 'fit-width':
+        controller.setFitMode('fitWidth')
+        break
+      case 'fit-height':
+        controller.setFitMode('fitHeight')
+        break
+      case 'fit-screen':
+        controller.setFitMode('fitScreen')
+        break
+      case 'actual-size':
+        controller.setFitMode('actual')
+        break
+      case 'reset-view':
+        controller.resetView()
+        break
+      case 'toggle-fullscreen':
+        void window.komascope.toggleFullscreen()
+        break
+    }
+  })
+
+  // 菜单 Language 切换 → 渲染进程同步语言
+  window.komascope.onLocaleChanged((locale) => {
+    applyLocale(locale)
+  })
 
   // 恢复上次会话:语言 + 文件夹显示 + 适配模式/缩放锁定(FR-9)
   void window.komascope
@@ -173,6 +217,8 @@ function main(): void {
       else applyLocale('zh')
       if (config.lastFolder) toolbar.setFolder(config.lastFolder)
       controller.restoreConfig(config)
+      // 按持久化语言重建应用菜单
+      void window.komascope.setMenuLocale(isLocale(config.locale) ? config.locale : 'zh')
     })
     .catch((err) => console.error(t('error.loadConfig'), err))
 }

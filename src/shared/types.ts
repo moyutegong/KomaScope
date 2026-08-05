@@ -85,6 +85,12 @@ export interface KomaScopeApi {
   fileUrl: (path: string) => string
   getConfig: () => Promise<AppConfig>
   setConfig: (patch: Partial<AppConfig>) => Promise<AppConfig>
+  /** 通知主进程重建应用菜单(语言切换后调用) */
+  setMenuLocale: (locale: 'zh' | 'en') => Promise<void>
+  /** 监听主进程菜单动作(open-folder / prev-page / zoom-in 等) */
+  onMenuAction: (handler: (action: string) => void) => void
+  /** 监听主进程语言切换(菜单 Language 项触发) */
+  onLocaleChanged: (handler: (locale: 'zh' | 'en') => void) => void
   getWindowInfo: () => Promise<WindowInfo>
   setWindowBounds: (bounds: { x: number; y: number; width: number; height: number }) => Promise<void>
   toggleFullscreen: () => Promise<boolean>

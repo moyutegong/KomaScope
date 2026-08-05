@@ -9,13 +9,13 @@ jobs:
   test:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -33,13 +33,13 @@ jobs:
     runs-on: windows-latest
     needs: test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: 9
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: pnpm
@@ -48,10 +48,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build installers (NSIS)
-        run: pnpm build:win
+        # --publish never:CI 上禁止 electron-builder 自动发布(push 无 tag 时
+        # 也会因 publish 配置尝试发布导致失败;发布由 release.yml 显式执行)
+        run: pnpm build:win -- --publish never
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: komascope-installer
           path: dist/*.exe

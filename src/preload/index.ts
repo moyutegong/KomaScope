@@ -20,6 +20,13 @@ const api: KomaScopeApi = {
   fileUrl: (path) => toFileUrl(path),
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
+  setMenuLocale: (locale) => ipcRenderer.invoke('menu:set-locale', locale),
+  onMenuAction: (handler) => {
+    ipcRenderer.on('menu:action', (_event, action: string) => handler(action))
+  },
+  onLocaleChanged: (handler) => {
+    ipcRenderer.on('locale:changed', (_event, locale: 'zh' | 'en') => handler(locale))
+  },
   getWindowInfo: () => ipcRenderer.invoke('window:getInfo'),
   setWindowBounds: (bounds) => ipcRenderer.invoke('window:setBounds', bounds),
   toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen')

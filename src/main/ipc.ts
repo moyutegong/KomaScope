@@ -7,6 +7,7 @@ import { stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { readImageMeta, scanFolder } from './file-service'
 import { configStore } from './config-store'
+import { buildAppMenu } from './menu'
 import type { AppConfig, PathStat, WindowInfo } from '../shared/types'
 
 /** 自定义协议名:渲染进程经 fetch 流式读取本地图片(4.2) */
@@ -83,6 +84,14 @@ export function registerIpc(): void {
   ipcMain.handle('config:set', (_event, patch: unknown): AppConfig => {
     if (typeof patch !== 'object' || patch === null) throw new Error('config:set 需要对象补丁')
     return configStore.set(patch as Partial<AppConfig>)
+  })
+
+  // --- 菜单(语言切换后重建应用菜单) ---
+  ipcMain.handle('menu:set-locale', (event, locale: unknown) => {
+    if (locale !== 'zh' && locale !== 'en') throw new Error('menu:set-locale 参数非法')
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('menu:set-locale 找不到窗口')
+    buildAppMenu(locale, win)
   })
 
   // --- 文件夹 ---
