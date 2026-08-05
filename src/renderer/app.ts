@@ -116,6 +116,8 @@ function main(): void {
   const HIDE_DELAY_MS = 500
   let immersive = false
   let hideTimer: number | null = null
+  /** 最近一次沉浸意图时间戳:抑制本应用触发的滞后 fullscreen:changed 事件 */
+  let lastImmersiveIntentAt = 0
 
   const setUiVisible = (el: HTMLElement, visible: boolean): void => {
     el.classList.toggle('ui-visible', visible)
@@ -152,6 +154,7 @@ function main(): void {
   })
 
   const setImmersive = async (enabled: boolean): Promise<void> => {
+    lastImmersiveIntentAt = Date.now()
     immersive = enabled
     document.body.classList.toggle('immersive', enabled)
     if (!enabled) hideAllUi()
@@ -162,9 +165,11 @@ function main(): void {
     void setImmersive(!immersive)
   })
 
-  // 系统方式进入/退出全屏(Win+Shift+Enter 等)→ 同步沉浸 UI
-  // (进入全屏也视为沉浸:菜单栏隐藏 + UI 浮动,与窗口沉浸一致)
+  // 系统方式进入/退出全屏(Win+Shift+Enter 等)→ 同步沉浸 UI。
+  // 本应用 setImmersive 触发的 fullscreen:changed 事件可能滞后到达
+  // (连点 F 时 enter 事件晚于第二次退出意图),500ms 内忽略避免覆盖。
   window.komascope.onFullScreenChanged((isFullScreen) => {
+    if (Date.now() - lastImmersiveIntentAt < 500) return
     if (isFullScreen) {
       if (!immersive) void setImmersive(true)
     } else if (immersive) {
