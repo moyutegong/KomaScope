@@ -17,6 +17,14 @@ function fileName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path
 }
 
+/** zip/cbz 压缩包扩展名(§13 P0) */
+const ARCHIVE_EXTENSIONS = ['.cbz', '.zip']
+
+function isArchiveFile(path: string): boolean {
+  const ext = path.slice(path.lastIndexOf('.')).toLowerCase()
+  return ARCHIVE_EXTENSIONS.includes(ext)
+}
+
 function main(): void {
   const statusbar = new StatusBar()
   const renderer = new ImageRenderer(document.getElementById('canvas') as HTMLCanvasElement)
@@ -83,6 +91,9 @@ function main(): void {
         const first = await window.komascope.statPath(paths[0])
         if (first.isDirectory) {
           await controller.openFolder(paths[0])
+        } else if (paths.length === 1 && isArchiveFile(paths[0])) {
+          // 拖入单个 cbz/zip:作为压缩包打开(§13 P0)
+          await controller.openArchive(paths[0])
         } else {
           paths.sort((a, b) => naturalCompare(fileName(a), fileName(b)))
           await controller.openFiles(paths)
@@ -171,6 +182,14 @@ function main(): void {
           }
         })
         break
+      case 'open-archive':
+        void window.komascope.openArchiveDialog().then((result) => {
+          if (result) {
+            toolbar.setFolder(result.folderPath)
+            void controller.openArchive(result.folderPath)
+          }
+        })
+        break
       case 'prev-page':
         controller.prevPage()
         break
@@ -197,6 +216,18 @@ function main(): void {
         break
       case 'reset-view':
         controller.resetView()
+        break
+      case 'toggle-layout':
+        controller.toggleLayoutMode()
+        break
+      case 'rotate-cw':
+        controller.rotateCw()
+        break
+      case 'flip-h':
+        controller.flipHorizontal()
+        break
+      case 'flip-v':
+        controller.flipVertical()
         break
       case 'toggle-fullscreen':
         void window.komascope.toggleFullscreen()

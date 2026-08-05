@@ -22,6 +22,25 @@ import type { StatusBar } from '../ui/statusbar'
 /** GPU 纹理上限阈值(§4.4:约 8192px),超过启用瓦片渲染 */
 const TILED_THRESHOLD = 8192
 
+/** 双页跨页左右页间距(图片像素,§13 P1) */
+const SPREAD_GAP = 16
+
+/** 扩展名 → MIME(压缩包条目字节构造 Blob 时需要,createImageBitmap 依赖正确 type) */
+const MIME_BY_EXT: Record<string, string> = {
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.png': 'image/png',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.bmp': 'image/bmp',
+  '.avif': 'image/avif'
+}
+
+function mimeFromName(name: string): string {
+  const ext = name.slice(name.lastIndexOf('.')).toLowerCase()
+  return MIME_BY_EXT[ext] ?? 'application/octet-stream'
+}
+
 export interface ViewerCallbacks {
   onFolderChanged?: (folderPath: string) => void
 }
@@ -40,6 +59,15 @@ export class ViewerController {
   private locked = false
   /** 双击切换:fitScreen ↔ 上一次自定义缩放(§5) */
   private lastCustomScale: number | null = null
+  /** 阅读布局(§13 P1 双页跨页):single 单页 / spread 左右并排 */
+  private layoutMode: 'single' | 'spread' = 'single'
+  /** 双页模式下右页位图 */
+  private rightBitmap: ImageBitmap | null = null
+  /** 旋转角度(§13 P2):0 | 90 | 180 | 270 */
+  private rotation = 0
+  /** 镜像(§13 P2) */
+  private flipH = false
+  private flipV = false
   /** 递增序号:翻页请求竞态时丢弃过期解码结果 */
   private loadSeq = 0
   /** 瓦片缓存(NFR-4:LRU 8 页) */
@@ -60,21 +88,95 @@ export class ViewerController {
     return this.locked
   }
 
-  /** 恢复上次会话配置(FR-9):适配模式 / 缩放锁定 */
+  /** 恢复上次会话配置(FR-9):适配模式 / 缩放锁定 / 阅读布局 */
   restoreConfig(config: AppConfig): void {
     this.fitMode = config.fitMode
     if (config.fitMode === 'custom' && config.scale > 0) {
       this.lastCustomScale = config.scale
     }
     this.setLocked(config.scaleLocked, false)
+    this.layoutMode = config.layoutMode
   }
 
-  /** 打开文件夹(FR-1):扫描 → 定位到第 0 页 */
+  /** 旋转/镜像后的显示尺寸(90/270° 交换宽高,§13 P2) */
+  private get displaySize(): Size {
+    return this.rotation % 180 === 90
+      ? { width: this.imageSize.height, height: this.imageSize.width }
+      : this.imageSize
+  }
+
+  /** 顺时针旋转 90°(§13 P2;瓦片模式不适用,因瓦片按原始方向解码) */
+  rotateCw(): void {
+    if (this.tiled) return
+    this.rotation = (this.rotation + 90) % 360
+    this.applyTransformChange()
+  }
+
+  /** 水平镜像(§13 P2;瓦片模式不适用) */
+  flipHorizontal(): void {
+    if (this.tiled) return
+    this.flipH = !this.flipH
+    this.applyTransformChange()
+  }
+
+  /** 垂直镜像(§13 P2;瓦片模式不适用) */
+  flipVertical(): void {
+    if (this.tiled) return
+    this.flipV = !this.flipV
+    this.applyTransformChange()
+  }
+
+  /** 旋转/镜像变更:双页布局先切回单页,再重算适配并重绘 */
+  private applyTransformChange(): void {
+    if (this.layoutMode === 'spread') {
+      this.layoutMode = 'single'
+      void window.komascope.setConfig({ layoutMode: this.layoutMode })
+    }
+    if (this.bitmap || this.tiled) this.applyFit()
+  }
+
+  /** 切换阅读布局(§13 P1 双页跨页) */
+  toggleLayoutMode(): void {
+    this.layoutMode = this.layoutMode === 'single' ? 'spread' : 'single'
+    void window.komascope.setConfig({ layoutMode: this.layoutMode })
+    // 重新加载当前页以应用布局
+    if (this.bitmap || this.tiled) void this.loadPage(this.currentIndex)
+  }
+
+  get isSpread(): boolean {
+    return this.layoutMode === 'spread'
+  }
+
+  /** 打开文件夹(FR-1):扫描 → 定位到上次阅读页(§13 P1)或第 0 页 */
   async openFolder(folderPath: string): Promise<void> {
     const result = await window.komascope.scanFolder(folderPath)
-    this.setPages(result.pages)
+    const initial = await this.restorePageIndex(folderPath, result.pages.length)
+    this.setPages(result.pages, initial)
     this.callbacks.onFolderChanged?.(folderPath)
     void window.komascope.setConfig({ lastFolder: folderPath })
+  }
+
+  /** 打开 zip/cbz 压缩包(§13 P0):扫描条目 → 定位到上次阅读页或第 0 页 */
+  async openArchive(archivePath: string): Promise<void> {
+    const result = await window.komascope.scanArchive(archivePath)
+    const initial = await this.restorePageIndex(archivePath, result.pages.length)
+    this.setPages(result.pages, initial)
+    this.callbacks.onFolderChanged?.(archivePath)
+    void window.komascope.setConfig({ lastFolder: archivePath })
+  }
+
+  /** 书签恢复(§13 P1):同一来源且 lastPage 有效时从上次页码继续 */
+  private async restorePageIndex(sourcePath: string, pageCount: number): Promise<number> {
+    if (pageCount <= 0) return 0
+    try {
+      const config = await window.komascope.getConfig()
+      if (config.lastFolder === sourcePath && config.lastPage > 0 && config.lastPage < pageCount) {
+        return config.lastPage
+      }
+    } catch {
+      // 配置读取失败时从第 0 页开始
+    }
+    return 0
   }
 
   /** 打开单张图片(拖拽/后续扩展) */
@@ -96,11 +198,14 @@ export class ViewerController {
   }
 
   nextPage(): void {
-    void this.loadPage(this.currentIndex + 1)
+    // 双页跨页:一次跳过两页(左页 → 原右页的下一页)
+    const step = this.layoutMode === 'spread' ? 2 : 1
+    void this.loadPage(this.currentIndex + step)
   }
 
   prevPage(): void {
-    void this.loadPage(this.currentIndex - 1)
+    const step = this.layoutMode === 'spread' ? 2 : 1
+    void this.loadPage(this.currentIndex - step)
   }
 
   // --- 变换交互(FR-4/5/7) ---
@@ -161,12 +266,12 @@ export class ViewerController {
     if ((!this.bitmap && !this.tiled) || this.imageSize.width <= 0 || this.imageSize.height <= 0) return
     if (mode === 'custom') {
       // custom:保留当前倍率,仅重新居中(翻页后保留缩放,FR-6)
-      this.transform = centerTransform(this.transform.scale, this.renderer.viewportSize, this.imageSize)
+      this.transform = centerTransform(this.transform.scale, this.renderer.viewportSize, this.displaySize)
     } else {
       this.transform = applyFit(
         mode,
         this.renderer.viewportSize,
-        this.imageSize,
+        this.displaySize,
         this.renderer.devicePixelRatio
       )
     }
@@ -186,12 +291,12 @@ export class ViewerController {
     this.render()
   }
 
-  private setPages(pages: PageItem[]): void {
+  private setPages(pages: PageItem[], initialIndex = 0): void {
     this.pages = pages
     this.currentIndex = -1
     this.statusbar.setPage(0, pages.length)
     if (pages.length > 0) {
-      void this.loadPage(0)
+      void this.loadPage(Math.min(initialIndex, pages.length - 1))
     } else {
       this.showEmpty()
     }
@@ -208,48 +313,98 @@ export class ViewerController {
     const page = this.pages[index]
     this.statusbar.setPage(index, this.pages.length)
     this.statusbar.setImageSize(page.width, page.height)
+    // 书签(§13 P1):记录当前页码(防抖落盘由 ConfigStore 处理)
+    void window.komascope.setConfig({ lastPage: index })
     try {
-      // 流式读取:自定义协议 komascope-file → fetch → 增量解码(4.2)
-      const res = await fetch(window.komascope.fileUrl(page.path))
-      if (!res.ok) throw new Error(`HTTP ${res.status}`)
-      const blob = await res.blob()
+      const blob = await this.getPageBlob(page)
       if (seq !== this.loadSeq) return
 
-      // 瓦片模式:元数据已知且超阈值 → 不整页解码,按需切瓦片
-      if (page.width > TILED_THRESHOLD || page.height > TILED_THRESHOLD) {
+      // 双页跨页:同时解码右页(§13 P1);右页失败则退化为单页
+      let right: ImageBitmap | null = null
+      if (this.layoutMode === 'spread' && index + 1 < this.pages.length) {
+        try {
+          const blobR = await this.getPageBlob(this.pages[index + 1])
+          right = await createImageBitmap(blobR)
+          if (seq !== this.loadSeq) {
+            right.close()
+            return
+          }
+        } catch {
+          right = null
+        }
+      }
+
+      // 瓦片模式:仅单页布局且超阈值 → 不整页解码,按需切瓦片
+      if (
+        this.layoutMode !== 'spread' &&
+        (page.width > TILED_THRESHOLD || page.height > TILED_THRESHOLD)
+      ) {
+        right?.close()
         this.enterTiledMode(blob, { width: page.width, height: page.height })
         return
       }
       const bitmap = await createImageBitmap(blob)
       if (seq !== this.loadSeq) {
         bitmap.close()
+        right?.close()
         return
       }
-      // 元数据未知(如 AVIF)但实际超阈值 → 降级为瓦片模式
-      if (bitmap.width > TILED_THRESHOLD || bitmap.height > TILED_THRESHOLD) {
+      // 元数据未知(如 AVIF)但实际超阈值 → 降级为瓦片模式(单页布局)
+      if (
+        this.layoutMode !== 'spread' &&
+        (bitmap.width > TILED_THRESHOLD || bitmap.height > TILED_THRESHOLD)
+      ) {
         bitmap.close()
+        right?.close()
         this.enterTiledMode(blob, { width: bitmap.width, height: bitmap.height })
         return
       }
       this.tiled = false
       this.pageBlob = null
       this.bitmap?.close()
+      this.rightBitmap?.close()
       this.bitmap = bitmap
-      this.imageSize = { width: bitmap.width, height: bitmap.height }
-      this.statusbar.setImageSize(bitmap.width, bitmap.height)
+      this.rightBitmap = right
+      if (this.layoutMode === 'spread' && right) {
+        // 合并尺寸:左宽 + 间距 + 右宽,高度取较大者(状态栏仍显示左页尺寸)
+        this.imageSize = {
+          width: bitmap.width + SPREAD_GAP + right.width,
+          height: Math.max(bitmap.height, right.height)
+        }
+        this.statusbar.setImageSize(bitmap.width, bitmap.height)
+      } else {
+        this.imageSize = { width: bitmap.width, height: bitmap.height }
+        this.statusbar.setImageSize(bitmap.width, bitmap.height)
+      }
       this.renderer.setVisible(true)
       if (this.fitMode === 'custom' && this.lastCustomScale !== null) {
         this.setFitMode('custom')
       } else {
         this.applyFit()
       }
-      // 预解码相邻页(NFR-2:当前页 + 后一页,向前翻时加前一页)
-      this.predecode(index + 1)
-      if (this.pages[index + 1] === undefined && index > 0) this.predecode(index - 1)
+      // 预解码相邻页(NFR-2;双页布局跳过已加载的右页)
+      const nextIndex = this.layoutMode === 'spread' ? index + 2 : index + 1
+      this.predecode(nextIndex)
+      if (this.pages[nextIndex] === undefined && index > 0) this.predecode(index - 1)
     } catch (err) {
       console.error(t('error.loadPage'), page.path, err)
       this.showEmpty()
     }
+  }
+
+  /**
+   * 统一获取页面字节(Blob):
+   * - 压缩包源(archiveEntry):IPC 读取单条目字节 → Blob(§13 P0)
+   * - 磁盘源:自定义协议 komascope-file → fetch → 流式读取(4.2)
+   */
+  private async getPageBlob(page: PageItem): Promise<Blob> {
+    if (page.archiveEntry) {
+      const bytes = await window.komascope.readArchiveEntry(page.path, page.archiveEntry)
+      return new Blob([new Uint8Array(bytes)], { type: mimeFromName(page.name) })
+    }
+    const res = await fetch(window.komascope.fileUrl(page.path))
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    return res.blob()
   }
 
   /** 进入瓦片模式(§4.4):保留 blob,按需解码可见瓦片 */
@@ -258,6 +413,8 @@ export class ViewerController {
     this.pageBlob = blob
     this.bitmap?.close()
     this.bitmap = null
+    this.rightBitmap?.close()
+    this.rightBitmap = null
     this.imageSize = imageSize
     this.statusbar.setImageSize(imageSize.width, imageSize.height)
     this.renderer.setVisible(true)
@@ -274,9 +431,7 @@ export class ViewerController {
     if (this.tileCache.hasPage(page.path)) return
     this.decodeQueue = this.decodeQueue.then(async () => {
       try {
-        const res = await fetch(window.komascope.fileUrl(page.path))
-        if (!res.ok) return
-        const blob = await res.blob()
+        const blob = await this.getPageBlob(page)
         const bitmap = await createImageBitmap(blob)
         this.tileCache.setPage(page.path, bitmap)
       } catch {
@@ -306,8 +461,14 @@ export class ViewerController {
         getTile: (tx, ty) => this.tileCache.get(pagePath, tx, ty),
         decodeTile: (tx, ty) => this.decodeTile(tx, ty)
       }, () => this.currentPagePath !== pagePath)
+    } else if (this.layoutMode === 'spread' && this.bitmap && this.rightBitmap) {
+      this.renderer.renderSpread(this.transform, this.bitmap, this.rightBitmap, SPREAD_GAP)
     } else if (this.bitmap) {
-      this.renderer.render(this.transform, this.bitmap)
+      this.renderer.render(this.transform, this.bitmap, {
+        rotation: this.rotation,
+        flipH: this.flipH,
+        flipV: this.flipV
+      })
     }
   }
 

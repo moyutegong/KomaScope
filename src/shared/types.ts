@@ -9,9 +9,9 @@ export type FitMode = 'fitWidth' | 'fitHeight' | 'fitScreen' | 'actual' | 'custo
 /** 滚轮动作(FR-3 可选翻页 / FR-5 缩放) */
 export type WheelAction = 'zoom' | 'page'
 
-/** 单张图片的页面元数据(FR-1 / 4.2 folder:scan) */
+/** 单张图片的页面元数据(FR-1 / 4.2 folder:scan;§13 P0 压缩包源) */
 export interface PageItem {
-  /** 绝对路径 */
+  /** 绝对路径(压缩包源为归档文件路径) */
   path: string
   /** 文件名(含扩展名) */
   name: string
@@ -21,6 +21,8 @@ export interface PageItem {
   height: number
   /** 文件字节数 */
   size: number
+  /** 压缩包内条目名(非空表示来自 zip/cbz 源,§4.2 SourceProvider) */
+  archiveEntry?: string
 }
 
 /** 应用配置(§4.5) */
@@ -42,6 +44,10 @@ export interface AppConfig {
   wheelAction: WheelAction
   /** 界面语言(中英文切换) */
   locale: 'zh' | 'en'
+  /** 阅读进度(§13 P1 书签):上次打开的文件夹/压缩包中的页码 */
+  lastPage: number
+  /** 阅读布局(§13 P1 双页跨页):single 单页 / spread 左右并排 */
+  layoutMode: 'single' | 'spread'
 }
 
 /** window:getInfo 返回值(4.2) */
@@ -72,7 +78,13 @@ export interface PathStat {
  */
 export interface KomaScopeApi {
   openFolderDialog: () => Promise<ScanResult | null>
+  /** 打开 zip/cbz 压缩包选择对话框(§13 P0) */
+  openArchiveDialog: () => Promise<ScanResult | null>
   scanFolder: (folderPath: string) => Promise<ScanResult>
+  /** 扫描 zip/cbz 压缩包,返回图片条目列表(§13 P0) */
+  scanArchive: (archivePath: string) => Promise<ScanResult>
+  /** 按条目名读取压缩包内单张图片字节(§13 P0) */
+  readArchiveEntry: (archivePath: string, entryName: string) => Promise<Uint8Array>
   readMeta: (path: string) => Promise<{ width: number; height: number }>
   /** 路径类型判定(拖拽导入:目录 / 文件,FR-2) */
   statPath: (path: string) => Promise<PathStat>

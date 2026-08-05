@@ -13,7 +13,11 @@ function toFileUrl(path: string): string {
 
 const api: KomaScopeApi = {
   openFolderDialog: () => ipcRenderer.invoke('folder:open'),
+  openArchiveDialog: () => ipcRenderer.invoke('archive:open'),
   scanFolder: (folderPath) => ipcRenderer.invoke('folder:scan', folderPath),
+  scanArchive: (archivePath) => ipcRenderer.invoke('archive:scan', archivePath),
+  readArchiveEntry: (archivePath, entryName) =>
+    ipcRenderer.invoke('archive:read', archivePath, entryName),
   readMeta: (path) => ipcRenderer.invoke('file:readMeta', path),
   statPath: (path) => ipcRenderer.invoke('fs:stat', path),
   getPathForFile: (file) => webUtils.getPathForFile(file),

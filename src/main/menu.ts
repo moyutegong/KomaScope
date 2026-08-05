@@ -12,6 +12,7 @@ const MENU_TEXT: Record<Locale, Record<string, string>> = {
   zh: {
     file: '文件(&F)',
     openFolder: '打开文件夹(&O)',
+    openArchive: '打开压缩包(&A)',
     quit: '退出(&Q)',
     edit: '编辑(&E)',
     undo: '撤销',
@@ -30,6 +31,10 @@ const MENU_TEXT: Record<Locale, Record<string, string>> = {
     fitScreen: '适应屏幕',
     actualSize: '实际大小',
     resetView: '重置视图',
+    spreadMode: '双页跨页',
+    rotateCw: '旋转 90°',
+    flipH: '水平镜像',
+    flipV: '垂直镜像',
     fullscreen: '全屏',
     window: '窗口(&W)',
     minimize: '最小化',
@@ -43,6 +48,7 @@ const MENU_TEXT: Record<Locale, Record<string, string>> = {
   en: {
     file: 'File',
     openFolder: 'Open Folder',
+    openArchive: 'Open Archive…',
     quit: 'Quit',
     edit: 'Edit',
     undo: 'Undo',
@@ -61,6 +67,10 @@ const MENU_TEXT: Record<Locale, Record<string, string>> = {
     fitScreen: 'Fit Screen',
     actualSize: 'Actual Size',
     resetView: 'Reset View',
+    spreadMode: 'Two-Page Spread',
+    rotateCw: 'Rotate 90°',
+    flipH: 'Flip Horizontal',
+    flipV: 'Flip Vertical',
     fullscreen: 'Toggle Fullscreen',
     window: 'Window',
     minimize: 'Minimize',
@@ -102,6 +112,11 @@ export function buildAppMenu(locale: Locale, win: BrowserWindow): void {
           accelerator: 'CmdOrCtrl+O',
           click: () => sendAction(win, 'open-folder')
         },
+        {
+          label: t('openArchive'),
+          accelerator: 'CmdOrCtrl+Shift+O',
+          click: () => sendAction(win, 'open-archive')
+        },
         { type: 'separator' },
         { role: 'quit', label: t('quit') }
       ]
@@ -132,6 +147,16 @@ export function buildAppMenu(locale: Locale, win: BrowserWindow): void {
         { label: t('fitScreen'), accelerator: '0', click: () => sendAction(win, 'fit-screen') },
         { label: t('actualSize'), accelerator: '1', click: () => sendAction(win, 'actual-size') },
         { label: t('resetView'), accelerator: 'R', click: () => sendAction(win, 'reset-view') },
+        {
+          label: t('spreadMode'),
+          type: 'checkbox',
+          checked: configStore.get().layoutMode === 'spread',
+          click: () => sendAction(win, 'toggle-layout')
+        },
+        { type: 'separator' },
+        { label: t('rotateCw'), click: () => sendAction(win, 'rotate-cw') },
+        { label: t('flipH'), click: () => sendAction(win, 'flip-h') },
+        { label: t('flipV'), click: () => sendAction(win, 'flip-v') },
         { type: 'separator' },
         {
           label: t('fullscreen'),

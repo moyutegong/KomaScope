@@ -20,7 +20,9 @@ export const DEFAULT_CONFIG: AppConfig = {
   uiScale: 1.0,
   theme: 'dark',
   wheelAction: 'zoom',
-  locale: 'zh'
+  locale: 'zh',
+  lastPage: 0,
+  layoutMode: 'single'
 }
 
 /** 用默认值补齐缺失字段,并剔除未知字段(向前兼容) */
@@ -36,7 +38,11 @@ export function normalizeConfig(raw: unknown): AppConfig {
     uiScale: typeof src.uiScale === 'number' && Number.isFinite(src.uiScale) ? src.uiScale : DEFAULT_CONFIG.uiScale,
     theme: src.theme === 'light' ? 'light' : 'dark',
     wheelAction: src.wheelAction === 'page' ? 'page' : 'zoom',
-    locale: src.locale === 'en' ? 'en' : 'zh'
+    locale: src.locale === 'en' ? 'en' : 'zh',
+    lastPage: typeof src.lastPage === 'number' && Number.isFinite(src.lastPage) && src.lastPage >= 0
+      ? Math.floor(src.lastPage)
+      : DEFAULT_CONFIG.lastPage,
+    layoutMode: src.layoutMode === 'spread' ? 'spread' : 'single'
   }
 }
 

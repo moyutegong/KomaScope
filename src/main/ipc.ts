@@ -6,6 +6,7 @@ import { BrowserWindow, dialog, ipcMain, net, protocol, screen } from 'electron'
 import { stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { readImageMeta, scanFolder } from './file-service'
+import { readArchiveEntry, scanArchive } from './zip-source'
 import { configStore } from './config-store'
 import { buildAppMenu } from './menu'
 import type { AppConfig, PathStat, WindowInfo } from '../shared/types'
@@ -111,6 +112,33 @@ export function registerIpc(): void {
     if (!isNonEmptyString(folderPath)) throw new Error('folder:scan 需要非空路径')
     const pages = await scanFolder(folderPath)
     return { folderPath, pages }
+  })
+
+  // --- 压缩包源(zip/cbz,§13 P0) ---
+  ipcMain.handle('archive:open', async (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender)
+    const result = await dialog.showOpenDialog(win ?? undefined!, {
+      title: '打开漫画压缩包',
+      properties: ['openFile'],
+      filters: [{ name: 'Comic archives', extensions: ['cbz', 'zip'] }]
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    const archivePath = result.filePaths[0]
+    const pages = await scanArchive(archivePath)
+    return { folderPath: archivePath, pages }
+  })
+
+  ipcMain.handle('archive:scan', async (_event, archivePath: unknown) => {
+    if (!isNonEmptyString(archivePath)) throw new Error('archive:scan 需要非空路径')
+    const pages = await scanArchive(archivePath)
+    return { folderPath: archivePath, pages }
+  })
+
+  ipcMain.handle('archive:read', async (_event, archivePath: unknown, entryName: unknown) => {
+    if (!isNonEmptyString(archivePath) || !isNonEmptyString(entryName)) {
+      throw new Error('archive:read 参数非法')
+    }
+    return readArchiveEntry(archivePath, entryName)
   })
 
   // --- 图片元数据(头部解析,不解码全图) ---

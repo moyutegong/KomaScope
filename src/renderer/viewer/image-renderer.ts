@@ -55,14 +55,52 @@ export class ImageRenderer {
     }
   }
 
-  /** 按变换绘制整页位图(等比锁定由单一 scale 保证,FR-7 语义 ①) */
-  render(t: ViewTransform, bitmap: ImageBitmap): void {
+  /**
+   * 按变换绘制整页位图(等比锁定由单一 scale 保证,FR-7 语义 ①)。
+   * opts.rotation(90° 步进)与 flipH/flipV(镜像)围绕图片中心应用(§13 P2)。
+   */
+  render(
+    t: ViewTransform,
+    bitmap: ImageBitmap,
+    opts: { rotation?: number; flipH?: boolean; flipV?: boolean } = {}
+  ): void {
     const { ctx, canvas, dpr } = this
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr)
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = 'high'
+    const rotation = opts.rotation ?? 0
+    if (rotation === 0 && !opts.flipH && !opts.flipV) {
+      ctx.drawImage(bitmap, t.tx, t.ty, bitmap.width * t.scale, bitmap.height * t.scale)
+      return
+    }
+    // 围绕图片中心旋转/镜像
+    ctx.save()
+    const cx = t.tx + (bitmap.width * t.scale) / 2
+    const cy = t.ty + (bitmap.height * t.scale) / 2
+    ctx.translate(cx, cy)
+    ctx.rotate((rotation * Math.PI) / 180)
+    ctx.scale(opts.flipH ? -1 : 1, opts.flipV ? -1 : 1)
+    ctx.translate(-cx, -cy)
     ctx.drawImage(bitmap, t.tx, t.ty, bitmap.width * t.scale, bitmap.height * t.scale)
+    ctx.restore()
+  }
+
+  /**
+   * 双页跨页绘制(§13 P1):左右两页并排,顶部对齐,同一 scale 等比缩放。
+   * left 为当前左页;right 为 null 时(末页单页)只绘制左页。
+   */
+  renderSpread(t: ViewTransform, left: ImageBitmap, right: ImageBitmap | null, gap: number): void {
+    const { ctx, canvas, dpr } = this
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr)
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(left, t.tx, t.ty, left.width * t.scale, left.height * t.scale)
+    if (right) {
+      const rightX = t.tx + (left.width + gap) * t.scale
+      ctx.drawImage(right, rightX, t.ty, right.width * t.scale, right.height * t.scale)
+    }
   }
 
   /**
