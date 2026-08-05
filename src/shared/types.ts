@@ -99,6 +99,8 @@ export interface KomaScopeApi {
   fileUrl: (path: string) => string
   getConfig: () => Promise<AppConfig>
   setConfig: (patch: Partial<AppConfig>) => Promise<AppConfig>
+  /** 原子移除最近文件夹历史(主进程内过滤,避免连续删除竞态),返回删除后列表 */
+  removeRecentFolder: (path: string) => Promise<string[]>
   /** 通知主进程重建应用菜单(语言切换后调用) */
   setMenuLocale: (locale: 'zh' | 'en') => Promise<void>
   /** 监听主进程菜单动作(open-folder / prev-page / zoom-in 等) */

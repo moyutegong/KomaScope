@@ -86,6 +86,10 @@ export function registerIpc(): void {
     if (typeof patch !== 'object' || patch === null) throw new Error('config:set 需要对象补丁')
     return configStore.set(patch as Partial<AppConfig>)
   })
+  ipcMain.handle('config:removeRecentFolder', (_event, path: unknown): string[] => {
+    if (!isNonEmptyString(path)) throw new Error('config:removeRecentFolder 需要非空路径')
+    return configStore.removeRecentFolder(path)
+  })
 
   // --- 菜单(语言切换后重建应用菜单) ---
   ipcMain.handle('menu:set-locale', (event, locale: unknown) => {

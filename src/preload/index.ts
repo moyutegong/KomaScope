@@ -24,6 +24,7 @@ const api: KomaScopeApi = {
   fileUrl: (path) => toFileUrl(path),
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
+  removeRecentFolder: (path) => ipcRenderer.invoke('config:removeRecentFolder', path),
   setMenuLocale: (locale) => ipcRenderer.invoke('menu:set-locale', locale),
   onMenuAction: (handler) => {
     ipcRenderer.on('menu:action', (_event, action: string) => handler(action))

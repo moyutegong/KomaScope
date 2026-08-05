@@ -98,6 +98,17 @@ export class ConfigStore {
     return this.config
   }
 
+  /**
+   * 原子移除最近文件夹历史(§侧栏删除)。
+   * 主进程内同步读-过滤-写,避免渲染进程并发 getConfig+setConfig 竞态
+   * (连续删除时后写覆盖先写导致被删项恢复)。返回删除后的列表。
+   */
+  removeRecentFolder(path: string): string[] {
+    this.config.recentFolders = this.config.recentFolders.filter((p) => p !== path)
+    this.scheduleSave()
+    return this.config.recentFolders
+  }
+
   /** 立即落盘(窗口关闭、退出前调用) */
   flush(): void {
     if (this.saveTimer !== null) {
