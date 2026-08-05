@@ -5,7 +5,7 @@
 import { app, BrowserWindow } from 'electron'
 import { registerFileProtocol, registerFileSchemePrivilege, registerIpc } from './ipc'
 import { buildAppMenu } from './menu'
-import { createMainWindow } from './window-manager'
+import { createMainWindow, isRebuildingWindow } from './window-manager'
 import { configStore } from './config-store'
 
 // 必须在 app ready 之前声明协议特权,否则渲染进程 fetch 自定义协议会失败
@@ -24,9 +24,9 @@ app.whenReady().then(() => {
   })
 })
 
-// 非 macOS:全部窗口关闭即退出
+// 非 macOS:全部窗口关闭即退出(窗口重建期间除外,§bug 修复)
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit()
+  if (process.platform !== 'darwin' && !isRebuildingWindow()) app.quit()
 })
 
 // 退出前立即落盘配置,避免防抖定时器丢失最后一次修改

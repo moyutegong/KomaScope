@@ -16,6 +16,14 @@ const DEFAULT_WORKAREA_RATIO = 0.88
 /** 几何记录防抖(ms) */
 const GEOMETRY_DEBOUNCE_MS = 500
 
+/** 重建窗口期间置位:window-all-closed 据此跳过 app.quit(§bug 修复) */
+let rebuilding = false
+
+/** 是否正处于窗口重建中(销毁旧窗口→创建新窗口的间隙) */
+export function isRebuildingWindow(): boolean {
+  return rebuilding
+}
+
 function defaultBounds(): { x: number; y: number; width: number; height: number } {
   const wa = screen.getPrimaryDisplay().workArea
   return centerInWorkArea(
@@ -118,11 +126,14 @@ export function createMainWindow(frameless = true): BrowserWindow {
  * @param frameless true=无边框(沉浸);false=有边框(可查看系统菜单)
  */
 export function rebuildMainWindow(frameless: boolean): BrowserWindow {
+  // 重建期间标记:销毁旧窗口会触发 window-all-closed,阻止 app.quit(§bug 修复)
+  rebuilding = true
   const old = BrowserWindow.getAllWindows()[0]
   const bounds = old && !old.isDestroyed() ? old.getBounds() : configStore.get().windowBounds
   const wasFullScreen = old?.isFullScreen() ?? false
   old?.destroy()
   const win = createMainWindow(frameless)
+  rebuilding = false
   if (!wasFullScreen) win.setBounds(bounds)
   return win
 }
