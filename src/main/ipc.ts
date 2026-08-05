@@ -174,4 +174,14 @@ export function registerIpc(): void {
     win.setFullScreen(!win.isFullScreen())
     return win.isFullScreen()
   })
+
+  // --- 沉浸模式(OS 全屏 + 隐藏菜单栏;菜单栏在 Windows 上可用 setMenuBarVisibility) ---
+  ipcMain.handle('window:setImmersive', (event, enabled: unknown) => {
+    if (typeof enabled !== 'boolean') throw new Error('window:setImmersive 需要布尔参数')
+    const win = BrowserWindow.fromWebContents(event.sender)
+    if (!win) throw new Error('window:setImmersive 找不到窗口')
+    win.setFullScreen(enabled)
+    win.setMenuBarVisibility(!enabled)
+    return enabled
+  })
 }

@@ -33,7 +33,11 @@ const api: KomaScopeApi = {
   },
   getWindowInfo: () => ipcRenderer.invoke('window:getInfo'),
   setWindowBounds: (bounds) => ipcRenderer.invoke('window:setBounds', bounds),
-  toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen')
+  toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen'),
+  setImmersive: (enabled) => ipcRenderer.invoke('window:setImmersive', enabled),
+  onFullScreenChanged: (handler) => {
+    ipcRenderer.on('fullscreen:changed', (_event, isFullScreen: boolean) => handler(isFullScreen))
+  }
 }
 
 contextBridge.exposeInMainWorld('komascope', api)

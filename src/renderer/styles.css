@@ -106,6 +106,50 @@ body {
   color: #fff;
 }
 
+/* --- 沉浸模式(OS 全屏 + UI 浮动隐藏) --- */
+/* 进入沉浸后:工具栏/状态栏/侧栏脱离文档流固定到视口边缘,默认移出视口 */
+body.immersive .toolbar,
+body.immersive .statusbar,
+body.immersive .sidebar {
+  position: fixed;
+  z-index: 100;
+  transition:
+    transform 0.2s ease,
+    opacity 0.2s ease;
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.immersive .toolbar {
+  top: 0;
+  left: 0;
+  right: 0;
+  transform: translateY(-100%);
+}
+
+body.immersive .statusbar {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  transform: translateY(100%);
+}
+
+body.immersive .sidebar {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  transform: translateX(-100%);
+}
+
+/* 鼠标移近边缘时滑入显示 */
+body.immersive .toolbar.ui-visible,
+body.immersive .statusbar.ui-visible,
+body.immersive .sidebar.ui-visible {
+  transform: translate(0, 0);
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* --- 工具栏 --- */
 .toolbar {
   display: flex;

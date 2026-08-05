@@ -2,7 +2,7 @@
  * 渲染进程入口:装配 UI、ViewerController、输入映射与配置恢复。
  * M3 范围:平移/锚点缩放/适配切换/缩放锁定/快捷键(§5)。
  */
-import { BookOpen, FolderOpen, Lock, Maximize, PanelLeft, createIcons } from 'lucide'
+import { BookOpen, FolderOpen, Lock, Maximize, PanelLeft, Scan, createIcons } from 'lucide'
 import type { ScanResult } from '../shared/types'
 import type { Point } from '../shared/transform-model'
 import { naturalCompare } from '../shared/natural-sort'
@@ -108,6 +108,65 @@ function main(): void {
     controller.onViewportResize()
   })
 
+  // --- 沉浸模式(OS 全屏 + 隐藏菜单栏 + UI 浮动隐藏) ---
+  const toolbarEl = document.getElementById('toolbar') as HTMLElement
+  const statusbarEl = document.getElementById('statusbar') as HTMLElement
+  const immersiveBtn = document.getElementById('btn-immersive') as HTMLButtonElement
+  const EDGE_PX = 8
+  const HIDE_DELAY_MS = 500
+  let immersive = false
+  let hideTimer: number | null = null
+
+  const setUiVisible = (el: HTMLElement, visible: boolean): void => {
+    el.classList.toggle('ui-visible', visible)
+  }
+
+  const hideAllUi = (): void => {
+    setUiVisible(toolbarEl, false)
+    setUiVisible(statusbarEl, false)
+    setUiVisible(sidebarEl, false)
+  }
+
+  const scheduleHide = (): void => {
+    if (hideTimer !== null) clearTimeout(hideTimer)
+    hideTimer = window.setTimeout(() => {
+      hideTimer = null
+      if (document.body.classList.contains('immersive')) hideAllUi()
+    }, HIDE_DELAY_MS)
+  }
+
+  // 边缘检测:鼠标移近顶部/底部/左侧边缘时滑出对应 UI,移开延时隐藏
+  window.addEventListener('mousemove', (e) => {
+    if (!document.body.classList.contains('immersive')) return
+    const nearTop = e.clientY <= EDGE_PX
+    const nearBottom = e.clientY >= window.innerHeight - EDGE_PX
+    const nearLeft = e.clientX <= EDGE_PX
+    if (hideTimer !== null) {
+      clearTimeout(hideTimer)
+      hideTimer = null
+    }
+    if (nearTop) setUiVisible(toolbarEl, true)
+    if (nearBottom) setUiVisible(statusbarEl, true)
+    if (nearLeft) setUiVisible(sidebarEl, true)
+    if (!nearTop && !nearBottom && !nearLeft) scheduleHide()
+  })
+
+  const setImmersive = async (enabled: boolean): Promise<void> => {
+    immersive = enabled
+    document.body.classList.toggle('immersive', enabled)
+    if (!enabled) hideAllUi()
+    await window.komascope.setImmersive(enabled)
+  }
+
+  immersiveBtn.addEventListener('click', () => {
+    void setImmersive(!immersive)
+  })
+
+  // 系统方式退出全屏(Win+Shift+Enter 等)→ 同步退出沉浸
+  window.komascope.onFullScreenChanged((isFullScreen) => {
+    if (!isFullScreen && immersive) void setImmersive(false)
+  })
+
   // 视口中心(+/− 缩放锚点,§5)
   const viewportCenter = (): Point => {
     const v = renderer.viewportSize
@@ -182,10 +241,12 @@ function main(): void {
         case 'F':
         case 'F11':
           e.preventDefault()
-          void window.komascope.toggleFullscreen()
+          void setImmersive(!immersive)
           break
         case 'Escape':
-          void exitFullscreenIfNeeded()
+          // 沉浸模式:退出全屏并恢复 UI;普通全屏:仅退出全屏
+          if (immersive) void setImmersive(false)
+          else void exitFullscreenIfNeeded()
           break
       }
     }
@@ -204,7 +265,7 @@ function main(): void {
   watchDpr()
 
   // lucide 图标:替换 [data-lucide] 元素为 SVG(在文案应用之前执行)
-  createIcons({ icons: { BookOpen, FolderOpen, Lock, Maximize, PanelLeft } })
+  createIcons({ icons: { BookOpen, FolderOpen, Lock, Maximize, PanelLeft, Scan } })
 
   // 应用菜单动作(主进程 File/View 菜单,§5 快捷键等价)
   window.komascope.onMenuAction((action) => {
@@ -265,7 +326,7 @@ function main(): void {
         controller.flipVertical()
         break
       case 'toggle-fullscreen':
-        void window.komascope.toggleFullscreen()
+        void setImmersive(!immersive)
         break
     }
   })

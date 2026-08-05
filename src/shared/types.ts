@@ -108,6 +108,10 @@ export interface KomaScopeApi {
   getWindowInfo: () => Promise<WindowInfo>
   setWindowBounds: (bounds: { x: number; y: number; width: number; height: number }) => Promise<void>
   toggleFullscreen: () => Promise<boolean>
+  /** 沉浸模式:OS 全屏 + 隐藏菜单栏(全屏本身无边框) */
+  setImmersive: (enabled: boolean) => Promise<boolean>
+  /** 监听全屏状态变化(系统方式进入/退出全屏时同步沉浸 UI) */
+  onFullScreenChanged: (handler: (isFullScreen: boolean) => void) => void
 }
 
 /** 渲染进程全局(window.komascope) */

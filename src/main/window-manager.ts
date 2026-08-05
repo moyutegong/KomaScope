@@ -84,6 +84,14 @@ export function createMainWindow(): BrowserWindow {
 
   win.once('ready-to-show', () => win.show())
 
+  // 全屏状态被系统方式改变(如 Win+Shift+Enter 等)时通知渲染进程同步 UI(沉浸模式)
+  win.on('leave-full-screen', () => {
+    if (!win.isDestroyed()) win.webContents.send('fullscreen:changed', false)
+  })
+  win.on('enter-full-screen', () => {
+    if (!win.isDestroyed()) win.webContents.send('fullscreen:changed', true)
+  })
+
   // 开发模式加载 dev server,生产加载打包产物
   if (process.env['ELECTRON_RENDERER_URL']) {
     void win.loadURL(process.env['ELECTRON_RENDERER_URL'])
