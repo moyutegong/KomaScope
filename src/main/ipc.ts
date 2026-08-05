@@ -43,13 +43,36 @@ function getWindowInfo(win: BrowserWindow): WindowInfo {
  * 注册自定义文件协议:komascope-file:///C:/path/to/img.jpg
  * → net.fetch(file://C:/path/to/img.jpg) 流式返回,主进程不参与像素处理。
  */
+
+/**
+ * 声明协议特权(必须在 app ready 之前调用,§4.2):
+ * - secure:视为安全来源
+ * - supportFetchAPI:渲染进程可用 fetch() 访问该协议
+ * - corsEnabled:允许渲染进程跨源 fetch(否则渲染进程 fetch 报 Failed to fetch)
+ * - stream:响应体可流式读取(createImageBitmap 增量解码)
+ * - 注意:不能启用 standard —— standard scheme 会把 Windows 盘符
+ *   (komascope-file:///F:/path 中的 F:)解析为 host,导致路径损坏
+ */
+export function registerFileSchemePrivilege(): void {
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: FILE_PROTOCOL,
+      privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, stream: true }
+    }
+  ])
+}
+
 export function registerFileProtocol(): void {
-  protocol.handle(FILE_PROTOCOL, (request) => {
+  protocol.handle(FILE_PROTOCOL, async (request) => {
     const url = new URL(request.url)
     let filePath = decodeURIComponent(url.pathname)
     // Windows 绝对路径:pathname 形如 /F:/a/b.jpg,去掉前导 '/'
     if (/^\/[A-Za-z]:/.test(filePath)) filePath = filePath.slice(1)
-    return net.fetch(pathToFileURL(filePath).toString())
+    const res = await net.fetch(pathToFileURL(filePath).toString())
+    // CORS:允许渲染进程(file:// 或 dev server 来源)跨源读取
+    const headers = new Headers(res.headers)
+    headers.set('Access-Control-Allow-Origin', '*')
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
   })
 }
 

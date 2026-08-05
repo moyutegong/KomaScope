@@ -10,7 +10,7 @@
 - Windows 10/11(主目标平台;macOS / Linux 可开发)
 
 ```bash
-git clone https://github.com/<owner>/KomaScope.git
+git clone https://github.com/moyutegong/KomaScope.git
 cd KomaScope
 npm install
 npm run dev      # electron-vite 开发模式

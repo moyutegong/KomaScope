@@ -1,0 +1,38 @@
+<!doctype html>
+<html>
+  <head><meta charset="UTF-8" /></head>
+  <body>
+    <pre id="out">pending</pre>
+    <script>
+      // 与生产渲染进程相同的链路:fetch 自定义协议 → blob → createImageBitmap
+      const urls = window.__SMOKE_URLS__ || []
+      ;(async () => {
+        const results = []
+        for (const url of urls) {
+          const out = { url, phase: 'fetch' }
+          try {
+            const res = await fetch(url)
+            out.status = res.status
+            out.contentType = res.headers.get('content-type')
+            if (!res.ok) { out.phase = 'fetch-fail'; results.push(out); continue }
+            out.phase = 'blob'
+            const blob = await res.blob()
+            out.blobSize = blob.size
+            out.blobType = blob.type
+            out.phase = 'decode'
+            const bmp = await createImageBitmap(blob)
+            out.bitmap = bmp.width + 'x' + bmp.height
+            bmp.close()
+            out.phase = 'done'
+          } catch (e) {
+            out.phase = out.phase + '-error'
+            out.error = String((e && e.message) || e)
+            out.errorName = e && e.name
+          }
+          results.push(out)
+        }
+        document.getElementById('out').textContent = JSON.stringify(results, null, 2)
+      })()
+    </script>
+  </body>
+</html>

@@ -3,9 +3,12 @@
  * 安全基线(contextIsolation/nodeIntegration/sandbox)在 window-manager.ts 中设置。
  */
 import { app, BrowserWindow } from 'electron'
-import { registerFileProtocol, registerIpc } from './ipc'
+import { registerFileProtocol, registerFileSchemePrivilege, registerIpc } from './ipc'
 import { createMainWindow } from './window-manager'
 import { configStore } from './config-store'
+
+// 必须在 app ready 之前声明协议特权,否则渲染进程 fetch 自定义协议会失败
+registerFileSchemePrivilege()
 
 app.whenReady().then(() => {
   registerFileProtocol()

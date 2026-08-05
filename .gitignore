@@ -18,3 +18,6 @@ Thumbs.db
 
 # Reasonix 本地会话元数据
 .reasonix/
+
+# 测试图片素材(不入库)
+testImg/
