@@ -2,27 +2,29 @@
 :root {
   --ui-scale: 1;
 
-  /* 配色 */
-  --bg: #101013;
-  --panel-bg: #1b1c21;
-  --panel-bg-2: #17181d;
-  --border: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.13);
-  --text: #e9e9ee;
-  --text-dim: #8f93a0;
+  /* 配色优化：更深邃的暗色，提升质感 */
+  --bg: #0d0e12;
+  --panel-bg: #18191f;
+  --panel-bg-2: #131419;
+  --border: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(255, 255, 255, 0.1);
+  --text: #eaecef;
+  --text-dim: #8b90a0;
   --accent: #4a9eff;
-  --accent-soft: rgba(74, 158, 255, 0.15);
-  --accent-soft-strong: rgba(74, 158, 255, 0.26);
-  --danger: #ff6b6b;
+  --accent-soft: rgba(74, 158, 255, 0.12);
+  --accent-soft-strong: rgba(74, 158, 255, 0.25);
+  --danger: #ff5c5c;
 
-  /* 尺寸 */
-  --toolbar-h: calc(46px * var(--ui-scale));
-  --statusbar-h: calc(30px * var(--ui-scale));
-  --radius: calc(6px * var(--ui-scale));
+  /* 尺寸优化：稍微增加圆角大小，更符合现代UI趋势 */
+  --toolbar-h: calc(52px * var(--ui-scale));
+  /* 工具栏略微加高，呼吸感更好 */
+  --statusbar-h: calc(32px * var(--ui-scale));
+  --radius: calc(8px * var(--ui-scale));
 
-  /* 阴影 */
-  --shadow-toolbar: 0 calc(1px * var(--ui-scale)) calc(3px * var(--ui-scale)) rgba(0, 0, 0, 0.3);
-  --shadow-float: 0 calc(8px * var(--ui-scale)) calc(28px * var(--ui-scale)) rgba(0, 0, 0, 0.55);
+  /* 阴影优化：更柔和、弥散的阴影 */
+  --shadow-sm: 0 calc(2px * var(--ui-scale)) calc(6px * var(--ui-scale)) rgba(0, 0, 0, 0.2);
+  --shadow-toolbar: 0 calc(4px * var(--ui-scale)) calc(12px * var(--ui-scale)) rgba(0, 0, 0, 0.3);
+  --shadow-float: 0 calc(12px * var(--ui-scale)) calc(32px * var(--ui-scale)) rgba(0, 0, 0, 0.6);
 
   color-scheme: dark;
 }
@@ -33,8 +35,6 @@
   padding: 0;
 }
 
-/* hidden 属性必须始终生效:显式 display 样式(如 .placeholder 的 flex)会覆盖
-   UA 的 [hidden] { display:none },导致 setVisible(false) 后提示仍显示 */
 [hidden] {
   display: none !important;
 }
@@ -49,10 +49,12 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+  font-family: 'Segoe UI', 'Microsoft YaHei', -apple-system, system-ui, sans-serif;
   font-size: calc(14px * var(--ui-scale));
   user-select: none;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Mac 下字体更纤细清晰 */
 }
 
 #app {
@@ -65,16 +67,15 @@ button {
   color: inherit;
 }
 
-/* 键盘可达性焦点环 */
 button:focus-visible {
   outline: calc(2px * var(--ui-scale)) solid var(--accent);
-  outline-offset: calc(1px * var(--ui-scale));
+  outline-offset: calc(2px * var(--ui-scale));
 }
 
 /* --- 自定义滚动条(WebKit) --- */
 ::-webkit-scrollbar {
-  width: calc(9px * var(--ui-scale));
-  height: calc(9px * var(--ui-scale));
+  width: calc(8px * var(--ui-scale));
+  height: calc(8px * var(--ui-scale));
 }
 
 ::-webkit-scrollbar-track {
@@ -82,14 +83,15 @@ button:focus-visible {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
   border-radius: calc(999px * var(--ui-scale));
   border: calc(2px * var(--ui-scale)) solid transparent;
   background-clip: padding-box;
+  transition: background 0.2s ease;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.2);
   background-clip: padding-box;
 }
 
@@ -100,15 +102,19 @@ button:focus-visible {
   min-height: 0;
 }
 
-/* --- 侧栏(历史 + 页面列表,§侧栏) --- */
+/* --- 侧栏 --- */
 .sidebar {
   display: flex;
   flex-direction: column;
-  width: calc(220px * var(--ui-scale));
+  width: calc(240px * var(--ui-scale));
+  /* 略微加宽，文字不易折行 */
   flex-shrink: 0;
-  background: linear-gradient(180deg, var(--panel-bg) 0%, var(--panel-bg-2) 100%);
+  background: var(--panel-bg);
+  /* 去掉过时的渐变，使用纯色 */
   border-right: 1px solid var(--border);
   overflow: hidden;
+  box-shadow: calc(2px * var(--ui-scale)) 0 calc(8px * var(--ui-scale)) rgba(0, 0, 0, 0.1);
+  z-index: 5;
 }
 
 .sidebar-section {
@@ -118,100 +124,86 @@ button:focus-visible {
   flex: 1;
 }
 
-/* 两个分区之间用更明显的分隔线区分 */
-.sidebar-section + .sidebar-section {
+.sidebar-section+.sidebar-section {
   border-top: 1px solid var(--border);
 }
 
 .sidebar-title {
   flex-shrink: 0;
-  padding: calc(10px * var(--ui-scale)) calc(14px * var(--ui-scale)) calc(8px * var(--ui-scale));
-  font-size: calc(11px * var(--ui-scale));
-  font-weight: 700;
-  letter-spacing: calc(0.09em * var(--ui-scale));
-  text-transform: uppercase;
-  color: var(--text-dim);
+  padding: calc(16px * var(--ui-scale)) calc(16px * var(--ui-scale)) calc(8px * var(--ui-scale));
+  font-size: calc(12px * var(--ui-scale));
+  font-weight: 600;
+  letter-spacing: calc(0.1em * var(--ui-scale));
+  color: rgba(255, 255, 255, 0.4);
 }
 
 .sidebar-list {
   flex: 1;
   overflow-y: auto;
-  padding: calc(2px * var(--ui-scale)) calc(8px * var(--ui-scale)) calc(8px * var(--ui-scale));
+  padding: calc(4px * var(--ui-scale)) calc(10px * var(--ui-scale)) calc(10px * var(--ui-scale));
 }
 
 .sidebar-item {
   display: block;
   width: 100%;
-  padding: calc(6px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  padding: calc(8px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  margin-bottom: calc(2px * var(--ui-scale));
+  /* 列表项之间增加一点空隙 */
   background: transparent;
   border: none;
   border-radius: var(--radius);
-  color: var(--text);
-  font-size: calc(12px * var(--ui-scale));
-  line-height: 1.45;
+  color: var(--text-dim);
+  font-size: calc(13px * var(--ui-scale));
+  line-height: 1.5;
   text-align: left;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
 }
 
 .sidebar-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
 }
 
-/* 选中项:主题色浅底 + 左侧指示条 */
+/* 选中项优化：去除左侧条，改用现代的整块柔和底色 */
 .sidebar-item-active {
-  position: relative;
-  background: var(--accent-soft-strong);
-  color: #fff;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
 }
 
-.sidebar-item-active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 20%;
-  bottom: 20%;
-  width: calc(3px * var(--ui-scale));
-  border-radius: calc(2px * var(--ui-scale));
-  background: var(--accent);
-}
-
-/* 历史项行:打开按钮 + 删除按钮(§侧栏删除历史) */
 .sidebar-item-row {
   display: flex;
   align-items: center;
   width: 100%;
-  gap: calc(2px * var(--ui-scale));
+  gap: calc(4px * var(--ui-scale));
 }
 
 .sidebar-item-row .sidebar-item {
   flex: 1;
   min-width: 0;
+  margin-bottom: 0;
+  /* Row模式下取消下边距 */
 }
 
 .sidebar-item-row .sidebar-item-del {
   flex-shrink: 0;
-  width: calc(22px * var(--ui-scale));
-  height: calc(22px * var(--ui-scale));
+  width: calc(26px * var(--ui-scale));
+  height: calc(26px * var(--ui-scale));
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: transparent;
   border: none;
-  border-radius: var(--radius);
+  border-radius: calc(6px * var(--ui-scale));
   color: var(--text-dim);
-  font-size: calc(11px * var(--ui-scale));
+  font-size: calc(13px * var(--ui-scale));
   cursor: pointer;
   opacity: 0;
-  transition:
-    opacity 0.15s ease,
-    background-color 0.15s ease,
-    color 0.15s ease;
+  transition: all 0.2s ease;
 }
 
 .sidebar-item-row:hover .sidebar-item-del {
@@ -220,19 +212,195 @@ button:focus-visible {
 
 .sidebar-item-row .sidebar-item-del:hover {
   color: var(--danger);
-  background: rgba(255, 107, 107, 0.12);
+  background: rgba(255, 92, 92, 0.15);
 }
 
-/* --- 沉浸模式(OS 全屏 + UI 浮动隐藏) --- */
-/* 进入沉浸后:工具栏/状态栏/侧栏脱离文档流固定到视口边缘,默认移出视口 */
+/* --- 工具栏 --- */
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: calc(10px * var(--ui-scale));
+  height: var(--toolbar-h);
+  padding: 0 calc(16px * var(--ui-scale));
+  /* 使用毛玻璃效果代替死板的渐变 */
+  background: rgba(24, 25, 31, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--border);
+  box-shadow: var(--shadow-toolbar);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+
+.toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6px * var(--ui-scale));
+  height: calc(32px * var(--ui-scale));
+  padding: 0 calc(14px * var(--ui-scale));
+  background: transparent;
+  color: var(--text);
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  font-size: calc(13px * var(--ui-scale));
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.toolbar-btn i {
+  display: inline-flex;
+}
+
+.toolbar-btn svg {
+  width: calc(16px * var(--ui-scale));
+  height: calc(16px * var(--ui-scale));
+}
+
+/* 按钮悬浮加入微光效果 */
+.toolbar-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.1);
+  box-shadow: var(--shadow-sm);
+}
+
+/* 按钮按下效果更Q弹 */
+.toolbar-btn:active {
+  transform: scale(0.96);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.toolbar-folder {
+  flex: 1;
+  min-width: 0;
+  margin-left: calc(12px * var(--ui-scale));
+  color: var(--text-dim);
+  font-size: calc(12px * var(--ui-scale));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- 视口 --- */
+.viewport {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  min-width: 0;
+  /* 优化中心径向渐变，更有舞台感 */
+  background: radial-gradient(circle at center, #1b1c23 0%, var(--bg) 100%);
+}
+
+.canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* --- 空状态占位美化 --- */
+.placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(16px * var(--ui-scale));
+  color: var(--text-dim);
+}
+
+.placeholder p:not(.hint) {
+  font-size: calc(32px * var(--ui-scale));
+  /* 放大标题 */
+  font-weight: 800;
+  letter-spacing: calc(0.04em * var(--ui-scale));
+  /* 更高级的文本渐变与发光 */
+  background: linear-gradient(135deg, #ffffff 0%, var(--accent) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 calc(4px * var(--ui-scale)) calc(16px * var(--ui-scale)) rgba(74, 158, 255, 0.25));
+}
+
+.placeholder .hint {
+  font-size: calc(14px * var(--ui-scale));
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: calc(0.05em * var(--ui-scale));
+  background: rgba(255, 255, 255, 0.03);
+  padding: calc(6px * var(--ui-scale)) calc(16px * var(--ui-scale));
+  border-radius: calc(99px * var(--ui-scale));
+  /* 胶囊状提示背景 */
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.placeholder-icon svg {
+  width: calc(72px * var(--ui-scale));
+  height: calc(72px * var(--ui-scale));
+  color: var(--accent);
+  opacity: 0.8;
+  filter: drop-shadow(0 0 calc(24px * var(--ui-scale)) rgba(74, 158, 255, 0.4));
+  margin-bottom: calc(10px * var(--ui-scale));
+}
+
+/* --- 状态栏 --- */
+.statusbar {
+  display: flex;
+  align-items: center;
+  gap: calc(16px * var(--ui-scale));
+  height: var(--statusbar-h);
+  padding: 0 calc(16px * var(--ui-scale));
+  /* 状态栏也加入轻微毛玻璃 */
+  background: rgba(19, 20, 25, 0.85);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border);
+  color: rgba(255, 255, 255, 0.5);
+  /* 稍微提亮文字 */
+  font-size: calc(12px * var(--ui-scale));
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  /* 状态栏数字用等宽字体更好看 */
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
+}
+
+.statusbar>span:not(:first-child)::before {
+  content: '';
+  display: inline-block;
+  width: calc(4px * var(--ui-scale));
+  height: calc(4px * var(--ui-scale));
+  border-radius: 50%;
+  margin-right: calc(16px * var(--ui-scale));
+  background: rgba(255, 255, 255, 0.15);
+  /* 把竖线改为更优雅的圆点分隔符 */
+  vertical-align: middle;
+}
+
+.statusbar>span {
+  display: inline-flex;
+  align-items: center;
+  white-space: nowrap;
+}
+
+#status-lock svg {
+  width: calc(14px * var(--ui-scale));
+  height: calc(14px * var(--ui-scale));
+  color: var(--accent);
+  margin-right: calc(4px * var(--ui-scale));
+  filter: drop-shadow(0 0 calc(4px * var(--ui-scale)) rgba(74, 158, 255, 0.5));
+  /* 小图标发光 */
+}
+
+/* --- 沉浸模式动画保持不变 --- */
 body.immersive .toolbar,
 body.immersive .statusbar,
 body.immersive .sidebar {
   position: fixed;
   z-index: 100;
   transition:
-    transform 0.25s cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 0.25s ease;
+    transform 0.35s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.35s ease;
   opacity: 0;
   pointer-events: none;
   box-shadow: var(--shadow-float);
@@ -259,165 +427,10 @@ body.immersive .sidebar {
   transform: translateX(-100%);
 }
 
-/* 鼠标移近边缘时滑入显示 */
 body.immersive .toolbar.ui-visible,
 body.immersive .statusbar.ui-visible,
 body.immersive .sidebar.ui-visible {
   transform: translate(0, 0);
   opacity: 1;
   pointer-events: auto;
-}
-
-/* --- 工具栏 --- */
-.toolbar {
-  display: flex;
-  align-items: center;
-  gap: calc(8px * var(--ui-scale));
-  height: var(--toolbar-h);
-  padding: 0 calc(12px * var(--ui-scale));
-  background: linear-gradient(180deg, #212228 0%, var(--panel-bg) 100%);
-  border-bottom: 1px solid var(--border);
-  box-shadow: var(--shadow-toolbar);
-  flex-shrink: 0;
-  position: relative;
-  z-index: 10;
-}
-
-.toolbar-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: calc(6px * var(--ui-scale));
-  height: calc(30px * var(--ui-scale));
-  padding: 0 calc(12px * var(--ui-scale));
-  background: rgba(255, 255, 255, 0.045);
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  font-size: calc(13px * var(--ui-scale));
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    border-color 0.15s ease,
-    transform 0.08s ease;
-}
-
-.toolbar-btn i {
-  display: inline-flex;
-}
-
-.toolbar-btn svg {
-  width: calc(16px * var(--ui-scale));
-  height: calc(16px * var(--ui-scale));
-}
-
-.toolbar-btn:hover {
-  background: var(--accent-soft);
-  border-color: rgba(74, 158, 255, 0.55);
-}
-
-.toolbar-btn:active {
-  transform: translateY(calc(1px * var(--ui-scale)));
-}
-
-/* 文件夹路径:弹性收缩 + 省略号 */
-.toolbar-folder {
-  flex: 1;
-  min-width: 0;
-  margin-left: calc(6px * var(--ui-scale));
-  color: var(--text-dim);
-  font-size: calc(12px * var(--ui-scale));
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-/* --- 视口 --- */
-.viewport {
-  position: relative;
-  flex: 1;
-  overflow: hidden;
-  min-width: 0;
-  background: radial-gradient(ellipse at center, #141519 0%, var(--bg) 100%);
-}
-
-.canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-
-/* --- 空状态占位 --- */
-.placeholder {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: calc(10px * var(--ui-scale));
-  color: var(--text-dim);
-  font-size: calc(20px * var(--ui-scale));
-}
-
-.placeholder .hint {
-  font-size: calc(13px * var(--ui-scale));
-  color: rgba(143, 147, 160, 0.72);
-}
-
-.placeholder p:not(.hint) {
-  font-weight: 600;
-  letter-spacing: calc(0.02em * var(--ui-scale));
-  background: linear-gradient(90deg, #e9e9ee 20%, var(--accent) 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-.placeholder-icon svg {
-  width: calc(60px * var(--ui-scale));
-  height: calc(60px * var(--ui-scale));
-  color: var(--accent);
-  opacity: 0.65;
-  filter: drop-shadow(0 0 calc(18px * var(--ui-scale)) rgba(74, 158, 255, 0.35));
-}
-
-/* --- 状态栏(§5 示例:第 12 / 240 页 · 3428×4820 · 缩放 87% · 🔒 锁定) --- */
-.statusbar {
-  display: flex;
-  align-items: center;
-  gap: calc(14px * var(--ui-scale));
-  height: var(--statusbar-h);
-  padding: 0 calc(14px * var(--ui-scale));
-  background: var(--panel-bg-2);
-  border-top: 1px solid var(--border);
-  color: var(--text-dim);
-  font-size: calc(12px * var(--ui-scale));
-  flex-shrink: 0;
-  position: relative;
-  z-index: 10;
-}
-
-/* 状态信息分组之间用细竖线分隔 */
-.statusbar > span:not(:first-child)::before {
-  content: '';
-  display: inline-block;
-  width: 1px;
-  height: calc(11px * var(--ui-scale));
-  margin-right: calc(14px * var(--ui-scale));
-  background: var(--border-strong);
-  vertical-align: middle;
-}
-
-.statusbar > span {
-  display: inline-flex;
-  align-items: center;
-  white-space: nowrap;
-}
-
-/* 锁定图标:主题色提示 */
-#status-lock svg {
-  width: calc(13px * var(--ui-scale));
-  height: calc(13px * var(--ui-scale));
-  color: var(--accent);
 }
