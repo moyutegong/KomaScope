@@ -97,6 +97,38 @@ body {
   white-space: nowrap;
 }
 
+/* 历史项行:打开按钮 + 删除按钮(§侧栏删除历史) */
+.sidebar-item-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.sidebar-item-row .sidebar-item {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar-item-row .sidebar-item-del {
+  flex-shrink: 0;
+  padding: calc(2px * var(--ui-scale)) calc(6px * var(--ui-scale));
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  font-size: calc(11px * var(--ui-scale));
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.sidebar-item-row:hover .sidebar-item-del {
+  opacity: 1;
+}
+
+.sidebar-item-row .sidebar-item-del:hover {
+  color: #ff6b6b;
+}
+
 .sidebar-item:hover {
   background: #2a2a2a;
 }

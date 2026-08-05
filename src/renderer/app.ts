@@ -52,6 +52,18 @@ function main(): void {
         }
       })()
     },
+    onRemoveHistory: (path) => {
+      void (async () => {
+        try {
+          const config = await window.komascope.getConfig()
+          const recent = config.recentFolders.filter((p) => p !== path)
+          await window.komascope.setConfig({ recentFolders: recent })
+          sidebar.setHistory(recent)
+        } catch (err) {
+          console.error(t('error.loadConfig'), err)
+        }
+      })()
+    },
     onSelectPage: (index) => controller.gotoPage(index)
   })
 

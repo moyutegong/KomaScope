@@ -7,6 +7,8 @@ import type { PageItem } from '../../shared/types'
 export interface SidebarEvents {
   /** 点击历史文件夹/压缩包 */
   onOpenPath: (path: string) => void
+  /** 删除历史项(从 recentFolders 移除并持久化) */
+  onRemoveHistory: (path: string) => void
   /** 点击页面列表项 */
   onSelectPage: (index: number) => void
 }
@@ -51,13 +53,30 @@ export class Sidebar {
     }
     this.historyEl.innerHTML = ''
     for (const path of this.history) {
+      // 行容器:左侧打开按钮 + 右侧删除按钮
+      const row = document.createElement('div')
+      row.className = 'sidebar-item-row'
+
       const item = document.createElement('button')
       item.type = 'button'
       item.className = 'sidebar-item' + (path === this.currentPath ? ' sidebar-item-active' : '')
       item.title = path
       item.textContent = path.split(/[\\/]/).pop() || path
       item.addEventListener('click', () => this.events.onOpenPath(path))
-      this.historyEl.appendChild(item)
+      row.appendChild(item)
+
+      const del = document.createElement('button')
+      del.type = 'button'
+      del.className = 'sidebar-item-del'
+      del.title = 'Remove'
+      del.textContent = '✕'
+      del.addEventListener('click', (e) => {
+        e.stopPropagation()
+        this.events.onRemoveHistory(path)
+      })
+      row.appendChild(del)
+
+      this.historyEl.appendChild(row)
     }
   }
 
