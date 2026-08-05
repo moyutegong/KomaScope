@@ -2,12 +2,14 @@
  * zip/cbz 压缩包源单测(§13 P0):用 fflate zipSync 构造测试包,
  * 验证 scanArchive 过滤/排序/条目名、readArchiveEntry 解压还原。
  */
+import { randomBytes } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { strToU8, zipSync } from 'fflate'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { readArchiveEntry, scanArchive } from '../src/main/zip-source'
+import { DEFAULT_ZIP_LIMITS, readArchiveEntry, scanArchive } from '../src/main/zip-source'
+import type { ZipLimits } from '../src/main/zip-source'
 
 let dir: string
 
@@ -79,5 +81,38 @@ describe('readArchiveEntry', () => {
   it('条目不存在时抛出错误', async () => {
     const archive = makeArchive({ 'a.png': strToU8('x') })
     await expect(readArchiveEntry(archive, 'missing.png')).rejects.toThrow()
+  })
+})
+
+describe('资源上限(security review HIGH/MEDIUM)', () => {
+  const tinyLimits: ZipLimits = {
+    ...DEFAULT_ZIP_LIMITS,
+    maxEntrySize: 8,
+    maxEntries: 1,
+    maxNameLength: 8,
+    maxArchiveSize: 1024
+  }
+
+  it('单条目解压超过 maxEntrySize 时抛错(zip 炸弹)', async () => {
+    // 可压缩内容:8KB 重复字节解压后远超 maxEntrySize=8
+    const archive = makeArchive({ 'bomb.png': strToU8('x'.repeat(8192)) })
+    await expect(readArchiveEntry(archive, 'bomb.png', tinyLimits)).rejects.toThrow('过大')
+  })
+
+  it('图片条目数超过 maxEntries 时抛错', async () => {
+    const archive = makeArchive({ 'a.png': strToU8('1'), 'b.png': strToU8('2') })
+    await expect(scanArchive(archive, tinyLimits)).rejects.toThrow('过多')
+  })
+
+  it('条目名超过 maxNameLength 的条目被跳过', async () => {
+    const archive = makeArchive({ 'very-long-name.png': strToU8('1') })
+    const pages = await scanArchive(archive, tinyLimits)
+    expect(pages).toEqual([])
+  })
+
+  it('归档文件超过 maxArchiveSize 时抛错', async () => {
+    // 不可压缩的随机数据,保证 zip 压缩后仍超过 maxArchiveSize=1024
+    const archive = makeArchive({ 'a.png': randomBytes(2048) })
+    await expect(scanArchive(archive, tinyLimits)).rejects.toThrow('过大')
   })
 })
