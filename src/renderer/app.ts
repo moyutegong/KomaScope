@@ -54,12 +54,22 @@ function main(): void {
     viewMode = mode
     const long = mode === 'long'
     longView.setVisible(long)
-    canvasEl.hidden = long
-    // placeholder 覆盖在 long-view 之上会拦截点击,切换时同步显隐;
-    // 退出长图模式后 placeholder 仅在没有图片时显示(避免遮住 canvas)
-    placeholderEl.hidden = long ? true : controller.pageCount === 0
+    // 长图模式:隐藏 placeholder(避免覆盖拦截点击);退出后:
+    // 有图片 → renderer.setVisible(true) 恢复 canvas 并隐藏提示;
+    // 无图片 → 显示 placeholder
+    if (long) {
+      canvasEl.hidden = true
+      placeholderEl.hidden = true
+    } else {
+      canvasEl.hidden = false
+      if (controller.pageCount > 0) {
+        renderer.setVisible(true)
+      } else {
+        placeholderEl.hidden = false
+      }
+      controller.applyFit()
+    }
     viewModeBtn.classList.toggle('toolbar-btn-active', long)
-    if (!long) controller.applyFit()
   }
 
   viewModeBtn.addEventListener('click', () => {

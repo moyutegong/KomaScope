@@ -300,6 +300,7 @@ button:focus-visible {
   position: absolute;
   inset: 0;
   overflow-y: auto;
+  overflow-x: auto;
   background: #000;
 }
 
@@ -315,6 +316,8 @@ button:focus-visible {
 
 .long-item img {
   display: block;
+  /* 缩放后小于视口宽时水平居中(§bug 修复);放大超宽时可横向滚动 */
+  margin: 0 auto;
   width: 100%;
   height: auto;
 }
