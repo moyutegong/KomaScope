@@ -72,6 +72,11 @@
 
 欢迎提交 Issue 与 Pull Request!开发前先阅读 [CONTRIBUTING.md](./CONTRIBUTING.md)。核心纯逻辑(变换模型、自然排序、LRU)均有单测覆盖,适合从小处入手。
 
+## 致谢
+
+- [Reasonix](https://github.com/esengine/DeepSeek-Reasonix.git) —— 本项目开发与排障全程由 Reasonix 辅助完成
+- [DeepSeek](https://www.deepseek.com/) —— 为本项目的需求分析、代码实现与文档编写提供了强大的大模型支持
+
 ## 许可证
 
 [Apache-2.0](./LICENSE)

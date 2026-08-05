@@ -395,3 +395,10 @@ KomaScope/
 - 图片旋转(90°/180°)与镜像(P2);
 - 触摸板手势与触摸屏支持(P2);
 - Web 版构建目标(浏览器演示,P3)。
+
+---
+
+## 14. 致谢
+
+- [Reasonix](https://github.com/esengine/DeepSeek-Reasonix.git) —— 本项目的开发与排障全程由 Reasonix 辅助完成;
+- [DeepSeek](https://www.deepseek.com/) —— 为需求分析、代码实现与文档编写提供了强大的大模型能力支持。

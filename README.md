@@ -72,6 +72,11 @@ By priority: zip / cbz archive reading (P0) → two-page spread mode, bookmarks 
 
 Issues and pull requests are welcome! Please read [CONTRIBUTING.md](./CONTRIBUTING.md) before you start. Core pure logic (transform model, natural sort, LRU) is fully unit-tested — a good place to make your first contribution.
 
+## Acknowledgments
+
+- [Reasonix](https://github.com/esengine/DeepSeek-Reasonix.git) — the development and troubleshooting of this project were assisted by Reasonix throughout
+- [DeepSeek](https://www.deepseek.com/) — provided powerful LLM support for requirements analysis, implementation and documentation of this project
+
 ## License
 
 [Apache-2.0](./LICENSE)

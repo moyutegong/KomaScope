@@ -395,3 +395,10 @@ In priority order:
 - Image rotation (90°/180°) and mirroring (P2);
 - Trackpad gestures & touchscreen support (P2);
 - Web build target — browser demo (P3).
+
+---
+
+## 14. Acknowledgments
+
+- [Reasonix](https://github.com/esengine/DeepSeek-Reasonix.git) — development and troubleshooting of this project were assisted by Reasonix throughout;
+- [DeepSeek](https://www.deepseek.com/) — provided powerful LLM support for requirements analysis, implementation and documentation.
