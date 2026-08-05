@@ -130,6 +130,9 @@ function main(): void {
   }
 
   const scheduleHide = (): void => {
+    // 沉浸守卫:非沉浸态不启动计时;退出后残留计时器到期时若已重新进入,
+    // 由 mouseenter 重新取消,此处守卫避免空转与误隐藏
+    if (!document.body.classList.contains('immersive')) return
     if (hideTimer !== null) clearTimeout(hideTimer)
     hideTimer = window.setTimeout(() => {
       hideTimer = null
@@ -144,9 +147,11 @@ function main(): void {
     }
   }
 
-  /** 鼠标是否位于任一浮动 UI 元素内(沉浸模式隐藏判断) */
+  /** 鼠标是否位于任一浮动 UI 元素内(沉浸模式隐藏判断)。
+   *  用 Element 而非 HTMLElement:lucide 图标为 SVG,悬停图标时
+   *  e.target 是 SVGElement,HTMLElement 判断会漏判导致误隐藏。 */
   const isOverUi = (e: MouseEvent): boolean =>
-    e.target instanceof HTMLElement &&
+    e.target instanceof Element &&
     e.target.closest('.toolbar, .statusbar, .sidebar') !== null
 
   // 边缘检测:鼠标移近顶部/底部/左侧边缘时滑出对应 UI;
