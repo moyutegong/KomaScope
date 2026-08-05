@@ -1,5 +1,7 @@
 name: CI
 
+# 日常 push / PR 仅运行轻量检查(typecheck + 单测)。
+# NSIS 构建与 Release 发布由 release.yml 在推送 v* tag 时触发。
 on:
   push:
     branches: [main]
@@ -28,32 +30,3 @@ jobs:
 
       - name: Unit tests
         run: pnpm test
-
-  build:
-    runs-on: windows-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 9
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 22
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Build installers (NSIS)
-        # build:win 已内置 --publish never:CI 上禁止 electron-builder 自动发布
-        # (electron-builder 26 检测到 publish 配置会隐式发布,缺少 GH_TOKEN 即失败;
-        # 发布由 release.yml 的 action-gh-release 显式执行)
-        run: pnpm build:win
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: komascope-installer
-          path: dist/*.exe

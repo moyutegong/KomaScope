@@ -333,8 +333,18 @@ export class ViewerController {
     }
   }
 
+  /**
+   * 缓存 key:zip/cbz 来源所有页 path 相同,必须追加 archiveEntry 区分
+   * (否则预解码只执行一次、瓦片模式串图,§13 P0 review should-fix)
+   */
+  private pageCacheKey(page: PageItem): string {
+    return page.archiveEntry ? `${page.path}#${page.archiveEntry}` : page.path
+  }
+
   private get currentPagePath(): string | null {
-    return this.currentIndex >= 0 ? (this.pages[this.currentIndex]?.path ?? null) : null
+    if (this.currentIndex < 0) return null
+    const page = this.pages[this.currentIndex]
+    return page ? this.pageCacheKey(page) : null
   }
 
   private async loadPage(index: number): Promise<void> {
@@ -460,12 +470,13 @@ export class ViewerController {
   private predecode(index: number): void {
     if (index < 0 || index >= this.pages.length) return
     const page = this.pages[index]
-    if (this.tileCache.hasPage(page.path)) return
+    const key = this.pageCacheKey(page)
+    if (this.tileCache.hasPage(key)) return
     this.decodeQueue = this.decodeQueue.then(async () => {
       try {
         const blob = await this.getPageBlob(page)
         const bitmap = await createImageBitmap(blob)
-        this.tileCache.setPage(page.path, bitmap)
+        this.tileCache.setPage(key, bitmap)
       } catch {
         // 预解码失败静默(下次翻页时再解码)
       }
@@ -482,7 +493,7 @@ export class ViewerController {
     const tileH = Math.min(TILE_SIZE, this.imageSize.height - origin.y)
     if (tileW <= 0 || tileH <= 0) return null
     const bitmap = await createImageBitmap(this.pageBlob, origin.x, origin.y, tileW, tileH)
-    this.tileCache.set(page.path, tileX, tileY, bitmap)
+    this.tileCache.set(this.pageCacheKey(page), tileX, tileY, bitmap)
     return bitmap
   }
 
