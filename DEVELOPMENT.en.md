@@ -200,20 +200,25 @@ Write throttling: config changes debounced 500ms before persisting; window geome
 
 | Action | Behavior |
 | --- | --- |
-| Mouse wheel | Default: zoom anchored at the cursor (ignored while locked) |
+| Mouse wheel (viewport) | Zoom anchored at the cursor (ignored while locked) |
+| Mouse wheel (sidebar) | Previous / next page |
+| Mouse wheel (long strip) | Scroll the strip |
+| `Ctrl+wheel` (long strip) | Zoom the strip (50%–400%, distinct from scrolling) |
 | Left-drag | Pan the image; dragging to the edge may turn pages (optional) |
 | Double-click | Toggle between `fitScreen` and the last custom zoom |
-| Drop file/folder | Open the corresponding image/directory |
-| `←` / `→` | Previous page / Next page |
+| Drop file/folder/archive | Open the corresponding image/directory (zip/cbz supported) |
+| `←` / `→` | Previous page / Next page (step 2 in spread mode) |
 | `+` / `-` | Zoom in / Zoom out (anchor = viewport center) |
 | `0` | Fit Screen |
 | `1` | Actual Size 1:1 |
 | `W` / `H` | Fit Width / Fit Height |
 | `L` | Toggle zoom lock (status bar icon syncs) |
 | `R` | Reset view (center + Fit Screen) |
-| `F` / `F11` | Fullscreen toggle |
-| `Esc` | Exit fullscreen / close settings panel |
-| Title bar / drag area | Drag window position; resize window from edges |
+| `F` / `F11` | OS fullscreen toggle |
+| `Esc` | Exit immersive / fullscreen |
+| Immersive button | Toggle non-fullscreen frameless mode; exiting rebuilds a framed window so the system menu is accessible |
+| Sidebar divider | Drag to adjust history/images split (15%–85%) |
+| Toolbar blank area | Drag the frameless window (custom min/max/close buttons) |
 
 **Status bar example**: `Page 12 / 240 · 3428×4820 · Zoom 87% · 🔒 Locked`
 
@@ -341,6 +346,17 @@ Open folder (button/drag & drop)
 
 **Total ≈ 6–9 working days**. On-device 4K verification after each milestone is recommended (see §11).
 
+**Continuous iteration after M5 (delivered in v0.1 / v0.2)**:
+
+- zip/cbz archive reading (fflate streaming, with resource limits);
+- two-page spread layout (side-by-side, page step 2);
+- bookmarks & reading progress memory (page persistence + restore on open);
+- image rotation (90° steps) and horizontal/vertical mirroring;
+- immersive mode (non-fullscreen frameless window; exiting rebuilds a framed window to access the system menu) and frameless window by default;
+- long-strip mode (endless vertical strip + Ctrl+wheel zoom);
+- sidebar (history management, image list, draggable split) and auto-hide UI;
+- dark theme visual refresh and code slimming (dead-code removal, shared MIME utility).
+
 ---
 
 ## 11. Testing & Verification
@@ -387,14 +403,12 @@ Open folder (button/drag & drop)
 
 ## 13. Future Extensions (Out of Current Scope)
 
-In priority order:
+In priority order (the following were already delivered through the v0.2 iterations: **zip/cbz reading, two-page spread, bookmarks & reading progress, image rotation & mirroring**):
 
-- **Read zip / cbz archives directly** (P0 — the most common demand in the comic community; extends via `SourceProvider`);
-- **Two-page spread reading mode** (P1 — side-by-side pages, naturally suited to 4K);
-- Bookmarks & reading progress memory (P1);
-- Image rotation (90°/180°) and mirroring (P2);
 - Trackpad gestures & touchscreen support (P2);
-- Web build target — browser demo (P3).
+- Web build target — browser demo (P3);
+- Page-turn animations / transitions (P2);
+- Combined rotation & mirroring optimization in spread mode (P2).
 
 ---
 
