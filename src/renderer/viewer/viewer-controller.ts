@@ -15,6 +15,7 @@ import {
 import type { Point, Size, ViewTransform } from '../../shared/transform-model'
 import { TileCache } from '../../shared/tile-cache'
 import { TILE_SIZE, tileOrigin } from '../../shared/tile-grid'
+import { t } from '../i18n'
 import type { ImageRenderer } from './image-renderer'
 import type { StatusBar } from '../ui/statusbar'
 
@@ -246,7 +247,7 @@ export class ViewerController {
       this.predecode(index + 1)
       if (this.pages[index + 1] === undefined && index > 0) this.predecode(index - 1)
     } catch (err) {
-      console.error('[KomaScope] 页面加载失败:', page.path, err)
+      console.error(t('error.loadPage'), page.path, err)
       this.showEmpty()
     }
   }

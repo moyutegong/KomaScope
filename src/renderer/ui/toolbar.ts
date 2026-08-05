@@ -1,17 +1,20 @@
 /**
- * 工具栏(M0 骨架):打开文件夹按钮;适应屏幕按钮(FR-8)。
- * 拖拽导入(FR-2)在 M2 接入。
+ * 工具栏:打开文件夹、适应屏幕(FR-8)、语言切换(中英文)。
  */
 import type { ScanResult } from '../../shared/types'
+import { t } from '../i18n'
 
 export interface ToolbarEvents {
   onFolderOpened: (result: ScanResult) => void
   /** 一键"适应屏幕":铺满当前显示器工作区(FR-8) */
   onFitScreen: () => void
+  /** 中英文切换 */
+  onToggleLang: () => void
 }
 
 export class Toolbar {
   private readonly folderEl: HTMLElement
+  private folderPath = ''
 
   constructor(private readonly events: ToolbarEvents) {
     this.folderEl = document.getElementById('toolbar-folder') as HTMLElement
@@ -19,11 +22,23 @@ export class Toolbar {
     openBtn.addEventListener('click', () => void this.openFolder())
     const fitBtn = document.getElementById('btn-fit-screen') as HTMLButtonElement
     fitBtn.addEventListener('click', () => this.events.onFitScreen())
+    const langBtn = document.getElementById('btn-lang') as HTMLButtonElement
+    langBtn.addEventListener('click', () => this.events.onToggleLang())
   }
 
   setFolder(folderPath: string): void {
-    this.folderEl.textContent = folderPath
-    this.folderEl.title = folderPath
+    this.folderPath = folderPath
+    this.renderFolder()
+  }
+
+  /** 语言切换后刷新文案 */
+  refresh(): void {
+    this.renderFolder()
+  }
+
+  private renderFolder(): void {
+    this.folderEl.textContent = this.folderPath === '' ? t('toolbar.noFolder') : this.folderPath
+    this.folderEl.title = this.folderPath
   }
 
   private async openFolder(): Promise<void> {

@@ -40,6 +40,8 @@ export interface AppConfig {
   uiScale: number
   theme: 'dark' | 'light'
   wheelAction: WheelAction
+  /** 界面语言(中英文切换) */
+  locale: 'zh' | 'en'
 }
 
 /** window:getInfo 返回值(4.2) */

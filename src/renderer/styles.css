@@ -16,6 +16,12 @@
   padding: 0;
 }
 
+/* hidden 属性必须始终生效:显式 display 样式(如 .placeholder 的 flex)会覆盖
+   UA 的 [hidden] { display:none },导致 setVisible(false) 后提示仍显示 */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body,
 #app {
@@ -49,6 +55,9 @@ body {
 }
 
 .toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(6px * var(--ui-scale));
   padding: calc(4px * var(--ui-scale)) calc(12px * var(--ui-scale));
   background: #2a2a2a;
   color: var(--text);
@@ -56,6 +65,15 @@ body {
   border-radius: calc(4px * var(--ui-scale));
   font-size: inherit;
   cursor: pointer;
+}
+
+.toolbar-btn i {
+  display: inline-flex;
+}
+
+.toolbar-btn svg {
+  width: calc(16px * var(--ui-scale));
+  height: calc(16px * var(--ui-scale));
 }
 
 .toolbar-btn:hover {
@@ -99,6 +117,12 @@ body {
 
 .placeholder .hint {
   font-size: calc(13px * var(--ui-scale));
+}
+
+.placeholder-icon svg {
+  width: calc(56px * var(--ui-scale));
+  height: calc(56px * var(--ui-scale));
+  opacity: 0.6;
 }
 
 /* --- 状态栏(§5 示例:第 12 / 240 页 · 3428×4820 · 缩放 87% · 🔒 锁定) --- */

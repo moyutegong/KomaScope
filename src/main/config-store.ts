@@ -19,7 +19,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   scaleLocked: false,
   uiScale: 1.0,
   theme: 'dark',
-  wheelAction: 'zoom'
+  wheelAction: 'zoom',
+  locale: 'zh'
 }
 
 /** 用默认值补齐缺失字段,并剔除未知字段(向前兼容) */
@@ -34,7 +35,8 @@ export function normalizeConfig(raw: unknown): AppConfig {
     scaleLocked: typeof src.scaleLocked === 'boolean' ? src.scaleLocked : DEFAULT_CONFIG.scaleLocked,
     uiScale: typeof src.uiScale === 'number' && Number.isFinite(src.uiScale) ? src.uiScale : DEFAULT_CONFIG.uiScale,
     theme: src.theme === 'light' ? 'light' : 'dark',
-    wheelAction: src.wheelAction === 'page' ? 'page' : 'zoom'
+    wheelAction: src.wheelAction === 'page' ? 'page' : 'zoom',
+    locale: src.locale === 'en' ? 'en' : 'zh'
   }
 }
 

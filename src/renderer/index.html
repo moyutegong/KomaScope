@@ -13,16 +13,27 @@
   <body>
     <div id="app">
       <header id="toolbar" class="toolbar">
-        <button id="btn-open-folder" class="toolbar-btn" type="button">打开文件夹</button>
-        <button id="btn-fit-screen" class="toolbar-btn" type="button" title="铺满当前显示器工作区">适应屏幕</button>
-        <span id="toolbar-folder" class="toolbar-folder">未打开文件夹</span>
+        <button id="btn-open-folder" class="toolbar-btn" type="button">
+          <i data-lucide="folder-open"></i>
+          <span data-i18n="toolbar.openFolder">打开文件夹</span>
+        </button>
+        <button id="btn-fit-screen" class="toolbar-btn" type="button" title="铺满当前显示器工作区">
+          <i data-lucide="maximize"></i>
+          <span data-i18n="toolbar.fitScreen">适应屏幕</span>
+        </button>
+        <button id="btn-lang" class="toolbar-btn" type="button" title="切换语言 / Switch language">
+          <i data-lucide="languages"></i>
+          <span id="lang-label" data-i18n="toolbar.lang">EN</span>
+        </button>
+        <span id="toolbar-folder" class="toolbar-folder" data-i18n="toolbar.noFolder">未打开文件夹</span>
       </header>
 
       <main id="viewport" class="viewport">
         <canvas id="canvas" class="canvas" hidden></canvas>
         <div id="placeholder" class="placeholder">
-          <p>KomaScope</p>
-          <p class="hint">打开文件夹或拖入图片开始阅读</p>
+          <i data-lucide="book-open" class="placeholder-icon"></i>
+          <p data-i18n="app.title">KomaScope</p>
+          <p class="hint" data-i18n="placeholder.hint">打开文件夹或拖入图片开始阅读</p>
         </div>
       </main>
 
@@ -30,7 +41,9 @@
         <span id="status-page">— / —</span>
         <span id="status-size">—</span>
         <span id="status-zoom">缩放 —</span>
-        <span id="status-lock" title="缩放锁定" hidden>🔒</span>
+        <span id="status-lock" data-i18n-title="status.lockTitle" hidden>
+          <i data-lucide="lock"></i>
+        </span>
       </footer>
     </div>
     <script type="module" src="./app.ts"></script>

@@ -4,7 +4,7 @@
 
 针对 **4K 分辨率(3840×2160)屏幕**优化的开源轻量桌面漫画阅读器。以接近原始分辨率的清晰度逐页阅读本地漫画图片,离线可用,单机工具。基于 [Apache-2.0](./LICENSE) 许可证开源。
 
-> **当前状态**:全部里程碑 M0–M5 已完成 — Electron + TypeScript 应用可运行(`pnpm dev`);文件夹浏览(自然排序)、拖拽导入、图片尺寸解析、首屏渲染、翻页、拖拽平移、光标锚点滚轮缩放、五种适配模式、缩放锁定、全部快捷键、HiDPI 适配(DPR 画布 + UI 缩放系数)、超大图瓦片渲染(>8192px)、相邻页预解码、配置持久化与 NSIS 打包(`pnpm build:win`)均可用。核心纯逻辑(变换模型、自然排序、图片尺寸、窗口几何、瓦片 LRU 与网格)均有单测覆盖;GitHub Actions CI/CD 与社区文件(Issue 模板、行为准则)已就位。详细开发方案见 [DEVELOPMENT.md](./DEVELOPMENT.md)(英文版见 [DEVELOPMENT.en.md](./DEVELOPMENT.en.md))。
+> **当前状态**:全部里程碑 M0–M5 已完成 — Electron + TypeScript 应用可运行(`pnpm dev`);文件夹浏览(自然排序)、拖拽导入、图片尺寸解析、首屏渲染、翻页、拖拽平移、光标锚点滚轮缩放、五种适配模式、缩放锁定、全部快捷键、HiDPI 适配(DPR 画布 + UI 缩放系数)、超大图瓦片渲染(>8192px)、相邻页预解码、配置持久化、lucide 图标与中英文切换均可用。核心纯逻辑(变换模型、自然排序、图片尺寸、窗口几何、瓦片 LRU 与网格、i18n)均有单测覆盖;GitHub Actions CI/CD 与社区文件(Issue 模板、行为准则)已就位。详细开发方案见 [DEVELOPMENT.md](./DEVELOPMENT.md)(英文版见 [DEVELOPMENT.en.md](./DEVELOPMENT.en.md))。
 
 ## 核心特性
 

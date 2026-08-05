@@ -2,9 +2,11 @@
  * 渲染进程入口:装配 UI、ViewerController、输入映射与配置恢复。
  * M3 范围:平移/锚点缩放/适配切换/缩放锁定/快捷键(§5)。
  */
+import { BookOpen, FolderOpen, Languages, Lock, Maximize, createIcons } from 'lucide'
 import type { ScanResult } from '../shared/types'
 import type { Point } from '../shared/transform-model'
 import { naturalCompare } from '../shared/natural-sort'
+import { applyStaticText, getLocale, isLocale, setLocale, t } from './i18n'
 import { ImageRenderer } from './viewer/image-renderer'
 import { InputController, wheelDeltaToFactor } from './viewer/input-controller'
 import { ViewerController } from './viewer/viewer-controller'
@@ -43,6 +45,14 @@ function main(): void {
     })
   }
 
+  // 语言切换(中英文):应用文案 → 持久化 → 刷新动态组件
+  const applyLocale = (locale: 'zh' | 'en'): void => {
+    setLocale(locale)
+    applyStaticText(locale)
+    toolbar.refresh()
+    statusbar.refresh()
+  }
+
   const toolbar = new Toolbar({
     onFolderOpened: (result: ScanResult) => {
       toolbar.setFolder(result.folderPath)
@@ -52,6 +62,11 @@ function main(): void {
       // 一键"适应屏幕":铺满当前显示器工作区(FR-8)
       const info = await window.komascope.getWindowInfo()
       await window.komascope.setWindowBounds(info.workArea)
+    },
+    onToggleLang: () => {
+      const next = getLocale() === 'zh' ? 'en' : 'zh'
+      applyLocale(next)
+      void window.komascope.setConfig({ locale: next })
     }
   })
 
@@ -147,14 +162,19 @@ function main(): void {
   // DPR 变化监听(拖动到不同缩放显示器,§4.4 / §12)
   watchDpr()
 
-  // 恢复上次会话:文件夹显示 + 适配模式/缩放锁定(FR-9)
+  // lucide 图标:替换 [data-lucide] 元素为 SVG(在文案应用之前执行)
+  createIcons({ icons: { BookOpen, FolderOpen, Languages, Lock, Maximize } })
+
+  // 恢复上次会话:语言 + 文件夹显示 + 适配模式/缩放锁定(FR-9)
   void window.komascope
     .getConfig()
     .then((config) => {
+      if (isLocale(config.locale)) applyLocale(config.locale)
+      else applyLocale('zh')
       if (config.lastFolder) toolbar.setFolder(config.lastFolder)
       controller.restoreConfig(config)
     })
-    .catch((err) => console.error('[KomaScope] 读取配置失败:', err))
+    .catch((err) => console.error(t('error.loadConfig'), err))
 }
 
 main()
