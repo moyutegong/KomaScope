@@ -15,6 +15,10 @@ describe('tileGridSize', () => {
     expect(tileGridSize({ width: 2049, height: 4096 })).toEqual({ columns: 2, rows: 2 })
     expect(tileGridSize({ width: 8000, height: 12000 })).toEqual({ columns: 4, rows: 6 })
   })
+
+  it('8736×11648 超大图(4K 两倍以上)网格 5×6', () => {
+    expect(tileGridSize({ width: 8736, height: 11648 })).toEqual({ columns: 5, rows: 6 })
+  })
 })
 
 describe('visibleTileRange', () => {

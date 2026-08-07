@@ -71,6 +71,11 @@ export class TileCache<T> {
     this.pages.delete(pagePath)
   }
 
+  /** 删除单个瓦片(解码结果被丢弃时同步清理,避免 closed 位图残留) */
+  delete(pagePath: string, tileX: number, tileY: number): void {
+    this.pages.get(pagePath)?.delete(this.tileKey(tileX, tileY))
+  }
+
   clear(): void {
     this.pages.clear()
   }

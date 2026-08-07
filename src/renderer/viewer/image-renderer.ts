@@ -6,12 +6,18 @@
  */
 import { imageToScreen } from '../../shared/transform-model'
 import type { Size, ViewTransform } from '../../shared/transform-model'
-import { tileOrigin, visibleTileRange } from '../../shared/tile-grid'
+import { TILE_SIZE, tileOrigin, visibleTileRange } from '../../shared/tile-grid'
+import { mapWithConcurrency } from '../../shared/concurrency'
+
+/** 瓦片解码并发上限:过高会瞬间吃满 CPU/内存,过低首屏变慢(§12) */
+const TILE_DECODE_CONCURRENCY = 4
 
 /** 瓦片提供者:由 ViewerController 实现(数据源 + TileCache) */
 export interface TileProvider {
   getTile(tileX: number, tileY: number): ImageBitmap | undefined
   decodeTile(tileX: number, tileY: number): Promise<ImageBitmap | null>
+  /** 移除缓存瓦片(解码结果被丢弃时同步清理,避免 closed 位图残留) */
+  removeTile?(tileX: number, tileY: number): void
 }
 
 export class ImageRenderer {
@@ -112,7 +118,9 @@ export class ImageRenderer {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr)
     ctx.imageSmoothingEnabled = true
-    ctx.imageSmoothingQuality = 'high'
+    // 缩小(<0.75)用 bilinear:bicubic(high)缩小开销大且视觉差异小,
+    // 瓦片模式下每帧绘制十余块缩小瓦片,是超大图卡顿的重要来源
+    ctx.imageSmoothingQuality = t.scale >= 0.75 ? 'high' : 'medium'
 
     const range = visibleTileRange(this.viewportSize, imageSize, t)
     if (range.x0 > range.x1 || range.y0 > range.y1) return
@@ -138,13 +146,29 @@ export class ImageRenderer {
     ctx.clearRect(0, 0, canvas.width, canvas.height)
   }
 
-  /** 绘制单个瓦片到屏幕(按瓦片在图片中的原点与变换换算) */
+  /** 绘制单个瓦片到屏幕(按瓦片在图片中的原点与变换换算)。
+   * 目标矩形向相邻瓦片方向扩展 1 CSS px:瓦片边界浮点坐标取整后
+   * 会出现 1px 缝隙,深色背景下表现为"黑线分割";扩展后相邻瓦片
+   * 重叠,缝隙由边缘像素插值覆盖,视觉无缝。图片边界瓦片不扩展,
+   * 避免把边缘像素画到图片外形成色带。 */
   private drawTile(t: ViewTransform, imageSize: Size, tileX: number, tileY: number, bitmap: ImageBitmap): void {
     const origin = tileOrigin(tileX, tileY)
     const screen = imageToScreen(t, origin)
-    const tileW = Math.min(2048, imageSize.width - origin.x)
-    const tileH = Math.min(2048, imageSize.height - origin.y)
-    this.ctx.drawImage(bitmap, screen.x, screen.y, tileW * t.scale, tileH * t.scale)
+    const tileW = Math.min(TILE_SIZE, imageSize.width - origin.x)
+    const tileH = Math.min(TILE_SIZE, imageSize.height - origin.y)
+    const padX = origin.x + tileW < imageSize.width ? 1 : 0
+    const padY = origin.y + tileH < imageSize.height ? 1 : 0
+    this.ctx.drawImage(
+      bitmap,
+      0,
+      0,
+      tileW,
+      tileH,
+      screen.x - padX,
+      screen.y - padY,
+      tileW * t.scale + padX * 2,
+      tileH * t.scale + padY * 2
+    )
   }
 
   private async decodeMissingTiles(
@@ -154,11 +178,26 @@ export class ImageRenderer {
     missing: { x: number; y: number }[],
     isStale: () => boolean
   ): Promise<void> {
-    const results = await Promise.all(
-      missing.map(async (m) => ({ x: m.x, y: m.y, bmp: await provider.decodeTile(m.x, m.y) }))
-    )
+    let results: { x: number; y: number; bmp: ImageBitmap | null }[]
+    try {
+      results = await mapWithConcurrency(missing, TILE_DECODE_CONCURRENCY, async (m) => ({
+        x: m.x,
+        y: m.y,
+        bmp: await provider.decodeTile(m.x, m.y)
+      }))
+    } catch {
+      // 单瓦片解码失败不中断整批(错误隔离,§12);缺失瓦片下次交互再解码
+      return
+    }
     if (isStale()) {
-      for (const r of results) r.bmp?.close()
+      for (const r of results) {
+        if (r.bmp) {
+          // 先从缓存移除再 close:避免 closed 位图残留,翻回旧页时
+          // getTile 命中 closed bitmap 导致 drawImage 抛错
+          provider.removeTile?.(r.x, r.y)
+          r.bmp.close()
+        }
+      }
       return
     }
     // 缺失瓦片已入缓存,整帧重绘(简单可靠)

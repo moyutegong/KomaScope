@@ -40,6 +40,12 @@ export class ViewerController {
   private bitmap: ImageBitmap | null = null
   /** 瓦片模式下的整页字节(不整页解码,按需切瓦片) */
   private pageBlob: Blob | null = null
+  /** 瓦片源策略(§4.4):JPEG 用 Blob 局部解码(Chromium 支持 DCT 部分解码);
+   * PNG/WebP 等 createImageBitmap(blob, rect) 每次都会整图解码再裁剪,
+   * 超大图每块瓦片全解码一次是性能灾难 → 整页解码一次后从全图裁剪 */
+  private fullBitmap: ImageBitmap | null = null
+  private fullBitmapPromise: Promise<ImageBitmap | null> | null = null
+  private tiledFromFull = false
   private tiled = false
   private transform: ViewTransform = identityTransform()
   private imageSize: Size = { width: 0, height: 0 }
@@ -393,6 +399,7 @@ export class ViewerController {
       }
       this.tiled = false
       this.pageBlob = null
+      this.releaseFullBitmap()
       this.bitmap?.close()
       this.rightBitmap?.close()
       this.bitmap = bitmap
@@ -445,6 +452,9 @@ export class ViewerController {
   private enterTiledMode(blob: Blob, imageSize: Size): void {
     this.tiled = true
     this.pageBlob = blob
+    const page = this.pages[this.currentIndex]
+    this.tiledFromFull = page ? mimeFromName(page.name) !== 'image/jpeg' : true
+    this.releaseFullBitmap()
     this.bitmap?.close()
     this.bitmap = null
     this.rightBitmap?.close()
@@ -455,13 +465,47 @@ export class ViewerController {
     this.applyFit()
   }
 
+  /** 整页解码一次(非 JPEG 瓦片源);并发请求共享同一 Promise */
+  private async ensureFullBitmap(): Promise<ImageBitmap | null> {
+    if (this.fullBitmap) return this.fullBitmap
+    if (!this.fullBitmapPromise) {
+      const blob = this.pageBlob
+      if (!blob) return null
+      this.fullBitmapPromise = (async () => {
+        try {
+          const bmp = await createImageBitmap(blob)
+          // 解码期间翻页/换源(pageBlob 已更换)或已 release:丢弃,
+          // 避免把旧页位图挂到新页上下文(串页 + 数百 MB 泄漏)
+          if (this.pageBlob !== blob) {
+            bmp.close()
+            return null
+          }
+          this.fullBitmap = bmp
+          return bmp
+        } catch {
+          return null
+        }
+      })()
+    }
+    return this.fullBitmapPromise
+  }
+
+  /** 释放整页位图与在途解码(翻页/换源时调用,避免数百 MB 常驻) */
+  private releaseFullBitmap(): void {
+    this.fullBitmap?.close()
+    this.fullBitmap = null
+    this.fullBitmapPromise = null
+  }
+
   /**
    * 预解码相邻页整页并存入 LRU(NFR-2 ≤200ms;NFR-4 上限 8 页)。
    * 串行执行,避免瞬间并发解码过多(§12 解码并发上限)。
+   * 超大图(瓦片模式)跳过:整页解码数百 MB,翻页时按需解码瓦片。
    */
   private predecode(index: number): void {
     if (index < 0 || index >= this.pages.length) return
     const page = this.pages[index]
+    if (page.width > TILED_THRESHOLD || page.height > TILED_THRESHOLD) return
     const key = this.pageCacheKey(page)
     if (this.tileCache.hasPage(key)) return
     this.decodeQueue = this.decodeQueue.then(async () => {
@@ -484,9 +528,24 @@ export class ViewerController {
     const tileW = Math.min(TILE_SIZE, this.imageSize.width - origin.x)
     const tileH = Math.min(TILE_SIZE, this.imageSize.height - origin.y)
     if (tileW <= 0 || tileH <= 0) return null
-    const bitmap = await createImageBitmap(this.pageBlob, origin.x, origin.y, tileW, tileH)
-    this.tileCache.set(this.pageCacheKey(page), tileX, tileY, bitmap)
-    return bitmap
+    try {
+      let bitmap: ImageBitmap
+      if (this.tiledFromFull) {
+        // 从整页位图裁剪:毫秒级内存拷贝,避免每瓦片整图解码
+        const full = await this.ensureFullBitmap()
+        if (!full) return null
+        // 解码期间翻页会 close fullBitmap,裁剪抛 InvalidStateError → catch 静默
+        bitmap = await createImageBitmap(full, origin.x, origin.y, tileW, tileH)
+      } else {
+        // JPEG:Chromium 支持源矩形部分解码,按瓦片解码内存最优
+        bitmap = await createImageBitmap(this.pageBlob, origin.x, origin.y, tileW, tileH)
+      }
+      this.tileCache.set(this.pageCacheKey(page), tileX, tileY, bitmap)
+      return bitmap
+    } catch {
+      // 翻页竞态(位图已 close)或解码失败:静默,缺失瓦片下次交互再解码
+      return null
+    }
   }
 
   private render(): void {
@@ -494,7 +553,8 @@ export class ViewerController {
     if (this.tiled && this.pageBlob && pagePath) {
       this.renderer.renderTiled(this.transform, this.imageSize, {
         getTile: (tx, ty) => this.tileCache.get(pagePath, tx, ty),
-        decodeTile: (tx, ty) => this.decodeTile(tx, ty)
+        decodeTile: (tx, ty) => this.decodeTile(tx, ty),
+        removeTile: (tx, ty) => this.tileCache.delete(pagePath, tx, ty)
       }, () => this.currentPagePath !== pagePath)
     } else if (this.layoutMode === 'spread' && this.bitmap && this.rightBitmap) {
       this.renderer.renderSpread(this.transform, this.bitmap, this.rightBitmap, SPREAD_GAP)
