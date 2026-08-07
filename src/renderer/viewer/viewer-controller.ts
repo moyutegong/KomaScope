@@ -376,11 +376,25 @@ export class ViewerController {
       const blob = await this.getPageBlob(page)
       if (seq !== this.loadSeq) return
 
-      // 双页跨页:同时解码右页(§13 P1);右页失败则退化为单页
+      // 像素上限(spread 布局,元数据已知):双页整页解码超限会 OOM,
+      // 必须在解码前拒绝;单页布局超限由 enterTiledMode 按格式判断
+      // (JPEG 局部解码不受限)
+      if (this.layoutMode === 'spread' && exceedsFullDecodeLimit(page.width, page.height)) {
+        this.rejectOversized(page, null)
+        return
+      }
+
+      // 双页跨页:同时解码右页(§13 P1);右页失败则退化为单页。
+      // 右页元数据已知超限 → 解码前拒绝;元数据未知 → 解码后兜底检查
       let right: ImageBitmap | null = null
       if (this.layoutMode === 'spread' && index + 1 < this.pages.length) {
+        const rightPage = this.pages[index + 1]
+        if (exceedsFullDecodeLimit(rightPage.width, rightPage.height)) {
+          this.rejectOversized(page, null)
+          return
+        }
         try {
-          const blobR = await this.getPageBlob(this.pages[index + 1])
+          const blobR = await this.getPageBlob(rightPage)
           right = await createImageBitmap(blobR)
           if (seq !== this.loadSeq) {
             right.close()
@@ -389,18 +403,6 @@ export class ViewerController {
         } catch {
           right = null
         }
-      }
-
-      // 像素上限(spread 布局):双页整页解码超限会 OOM,在此拒绝;
-      // 单页布局超限由 enterTiledMode 按格式判断(JPEG 局部解码不受限)
-      if (
-        this.layoutMode === 'spread' &&
-        (exceedsFullDecodeLimit(page.width, page.height) ||
-          (index + 1 < this.pages.length &&
-            exceedsFullDecodeLimit(this.pages[index + 1].width, this.pages[index + 1].height)))
-      ) {
-        this.rejectOversized(page, right)
-        return
       }
 
       // 瓦片模式:仅单页布局且超阈值 → 不整页解码,按需切瓦片
@@ -418,10 +420,12 @@ export class ViewerController {
         right?.close()
         return
       }
-      // 元数据未知(如 AVIF)实际超限的兜底:超像素上限直接拒绝
-      if (exceedsFullDecodeLimit(bitmap.width, bitmap.height)) {
+      // 兜底(元数据未知,如 AVIF):左/右页实际尺寸超限 → 拒绝
+      if (
+        exceedsFullDecodeLimit(bitmap.width, bitmap.height) ||
+        (right !== null && exceedsFullDecodeLimit(right.width, right.height))
+      ) {
         bitmap.close()
-        right?.close()
         this.rejectOversized(page, right)
         return
       }
