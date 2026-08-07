@@ -29,7 +29,8 @@ def fit_font(text):
         "C:/Windows/Fonts/msyhbd.ttc",        # 微软雅黑 Bold
         "C:/Windows/Fonts/seguibl.ttf",       # Segoe UI Black
         "C:/Windows/Fonts/impact.ttf",        # Impact(过宽,兜底)
-        "/System/Library/Fonts/Helvetica.ttc",  # macOS
+        "/System/Library/Fonts/HelveticaNeue-Bold.ttf",  # macOS 粗体
+        "/System/Library/Fonts/Helvetica.ttc",          # macOS 兜底(TTC,可能非粗体)
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",  # Linux
     ]
     for path in candidates:
@@ -67,16 +68,19 @@ def main():
     sd.text((0, 0), text, font=font, fill=(*ACCENT, 255), stroke_width=14, stroke_fill=(*ACCENT, 255))
     img.alpha_composite(stroke)
 
-    # 3) 白色渐变填充(白 → 浅蓝):用文字 mask 裁出填充层
+    # 3) 白色渐变填充(白 → 浅蓝):用文字 mask 裁出填充层;
+    # 渐变限定在文字区域内,避免全屏渐变被文字只取顶部而不可见
     mask = Image.new("L", (SIZE, SIZE), 0)
     md = ImageDraw.Draw(mask)
     md.text((0, 0), text, font=font, fill=255)
+    mbox = mask.getbbox() or (0, 0, SIZE, SIZE)
     gradient = Image.new("RGBA", (SIZE, SIZE))
     gd = ImageDraw.Draw(gradient)
     top = (255, 255, 255, 255)
     bottom = (168, 205, 255, 255)
-    for y in range(SIZE):
-        t = y / (SIZE - 1)
+    gy0, gy1 = mbox[1], mbox[3]
+    for y in range(gy0, gy1):
+        t = (y - gy0) / max(1, gy1 - gy0)
         gd.line(
             [(0, y), (SIZE, y)],
             fill=tuple(int(top[i] + (bottom[i] - top[i]) * t) for i in range(4)),
