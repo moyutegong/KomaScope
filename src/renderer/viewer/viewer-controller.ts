@@ -30,6 +30,11 @@ const TILED_THRESHOLD = 8192
  */
 const MAX_FULL_DECODE_PIXELS = 150_000_000
 
+/** 尺寸是否超出整页解码像素上限(§12;0/未知尺寸不触发) */
+function exceedsFullDecodeLimit(width: number, height: number): boolean {
+  return width > 0 && height > 0 && width * height > MAX_FULL_DECODE_PIXELS
+}
+
 /** 双页跨页左右页间距(图片像素,§13 P1) */
 const SPREAD_GAP = 16
 
@@ -59,6 +64,8 @@ export class ViewerController {
   private tiled = false
   /** 已知解码失败的瓦片坐标(避免失败后每次重绘都重新解码 → CPU 自旋) */
   private failedTiles = new Set<string>()
+  /** 在途瓦片解码 Promise(同坐标去重,避免重复解码覆盖位图不 close) */
+  private inFlightTiles = new Map<string, Promise<ImageBitmap | null>>()
   private transform: ViewTransform = identityTransform()
   private imageSize: Size = { width: 0, height: 0 }
   private fitMode: FitMode = 'fitScreen'
@@ -384,6 +391,27 @@ export class ViewerController {
         }
       }
 
+      // 像素上限(spread 布局):双页整页解码超限会 OOM,在此拒绝;
+      // 单页布局超限由 enterTiledMode 按格式判断(JPEG 局部解码不受限)
+      if (
+        this.layoutMode === 'spread' &&
+        exceedsFullDecodeLimit(page.width, page.height)
+      ) {
+        console.error(t('error.loadPage'), page.path, '图片过大,超出整页解码上限')
+        right?.close()
+        this.tiled = false
+        this.pageBlob = null
+        this.releaseFullBitmap()
+        this.bitmap?.close()
+        this.bitmap = null
+        this.rightBitmap?.close()
+        this.rightBitmap = null
+        this.imageSize = { width: 0, height: 0 }
+        this.statusbar.setImageSize(0, 0)
+        this.showEmpty()
+        return
+      }
+
       // 瓦片模式:仅单页布局且超阈值 → 不整页解码,按需切瓦片
       if (
         this.layoutMode !== 'spread' &&
@@ -465,13 +493,7 @@ export class ViewerController {
     const page = this.pages[this.currentIndex]
     this.tiledFromFull = page ? mimeFromName(page.name) !== 'image/jpeg' : true
     // 非 JPEG 需整页解码一次:超过像素上限直接拒绝,防止恶意尺寸 OOM
-    if (
-      this.tiledFromFull &&
-      page &&
-      imageSize.width > 0 &&
-      imageSize.height > 0 &&
-      imageSize.width * imageSize.height > MAX_FULL_DECODE_PIXELS
-    ) {
+    if (this.tiledFromFull && exceedsFullDecodeLimit(imageSize.width, imageSize.height)) {
       console.error(t('error.loadPage'), page.path, '图片过大,超出整页解码上限')
       this.tiled = false
       this.releaseFullBitmap()
@@ -560,8 +582,20 @@ export class ViewerController {
     void this.decodeQueue
   }
 
-  /** 瓦片解码(经 LRU 缓存) */
+  /** 瓦片解码(经 LRU 缓存);同坐标在途解码共享同一 Promise,
+   * 避免连续交互对同一瓦片重复解码(后批次覆盖前批次位图且不 close) */
   private async decodeTile(tileX: number, tileY: number): Promise<ImageBitmap | null> {
+    const key = `${tileX}:${tileY}`
+    const inFlight = this.inFlightTiles.get(key)
+    if (inFlight) return inFlight
+    const p = this.decodeTileInner(tileX, tileY).finally(() => {
+      this.inFlightTiles.delete(key)
+    })
+    this.inFlightTiles.set(key, p)
+    return p
+  }
+
+  private async decodeTileInner(tileX: number, tileY: number): Promise<ImageBitmap | null> {
     const page = this.pages[this.currentIndex]
     if (!page || !this.pageBlob) return null
     const seq = this.loadSeq
