@@ -240,7 +240,8 @@ KomaScope/
 │       ├── ci.yml                # lint + typecheck + 单测(PR/push)
 │       └── release.yml           # tag 触发,electron-builder 出包并发布
 ├── resources/
-│   └── icon.png                  # 应用图标
+│   ├── icon.png                  # EXE/安装包图标(KomaScope 艺术字)
+│   └── window-icon.png           # 窗口标题栏图标(lucide image 开源图标)
 ├── src/
 │   ├── main/                     # 主进程
 │   │   ├── index.ts              # 入口:创建窗口、注册 IPC

@@ -240,7 +240,8 @@ KomaScope/
 │       ├── ci.yml                # lint + typecheck + unit tests (PR/push)
 │       └── release.yml           # tag-triggered electron-builder publish
 ├── resources/
-│   └── icon.png                  # app icon
+│   ├── icon.png                  # EXE/installer icon (KomaScope wordmark)
+│   └── window-icon.png           # window title-bar icon (lucide image icon)
 ├── src/
 │   ├── main/                     # main process
 │   │   ├── index.ts              # entry: create window, register IPC
