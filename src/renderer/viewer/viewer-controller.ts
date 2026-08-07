@@ -20,6 +20,10 @@ import { t } from '../i18n'
 import type { ImageRenderer } from './image-renderer'
 import type { StatusBar } from '../ui/statusbar'
 
+/** 变换配置 IPC 持久化防抖(§性能):缩放交互高频触发(滚轮可达
+ * 100+ 事件/秒),合并为低频 IPC 写入;主进程侧另有 500ms 落盘防抖 */
+const PERSIST_DEBOUNCE_MS = 150
+
 /** GPU 纹理上限阈值(§4.4:约 8192px),超过启用瓦片渲染 */
 const TILED_THRESHOLD = 8192
 
@@ -87,12 +91,20 @@ export class ViewerController {
   /** 瓦片缓存(NFR-4:LRU 8 页) */
   private readonly tileCache = new TileCache<ImageBitmap>(8)
   private decodeQueue: Promise<void> = Promise.resolve()
+  /** rAF 渲染合并:交互事件(滚轮/拖拽)频率远超屏幕刷新率,
+   * 变换立即写入状态,实际重绘合并到下一帧,避免每事件整帧重绘 */
+  private renderQueued = false
+  /** 变换配置持久化防抖计时器(§性能) */
+  private persistTimer: ReturnType<typeof setTimeout> | null = null
 
   constructor(
     private readonly renderer: ImageRenderer,
     private readonly statusbar: StatusBar,
     private readonly callbacks: ViewerCallbacks = {}
-  ) {}
+  ) {
+    // 页面卸载(关窗/退出)前冲刷防抖中的配置,避免最后一次缩放丢失
+    window.addEventListener('pagehide', () => this.flushPendingConfig())
+  }
 
   get pageCount(): number {
     return this.pages.length
@@ -328,11 +340,28 @@ export class ViewerController {
     if (this.bitmap || this.tiled) this.applyFit()
   }
 
-  /** 变换变更后统一收尾:状态栏同步 + 持久化 + 重绘 */
+  /** 变换变更后统一收尾:状态栏同步 + 持久化(防抖)+ 重绘 */
   private afterTransformChange(): void {
     this.statusbar.setZoom(this.transform.scale)
-    void window.komascope.setConfig({ fitMode: this.fitMode, scale: this.transform.scale })
+    if (this.persistTimer !== null) clearTimeout(this.persistTimer)
+    this.persistTimer = setTimeout(() => {
+      this.persistTimer = null
+      void window.komascope.setConfig({ fitMode: this.fitMode, scale: this.transform.scale })
+    }, PERSIST_DEBOUNCE_MS)
     this.render()
+  }
+
+  /** 冲刷防抖中的配置(页面卸载时调用,保证最后状态不丢) */
+  private flushPendingConfig(): void {
+    if (this.persistTimer !== null) {
+      clearTimeout(this.persistTimer)
+      this.persistTimer = null
+      void window.komascope
+        .setConfig({ fitMode: this.fitMode, scale: this.transform.scale })
+        .catch(() => {
+          // 卸载瞬间 IPC 可能失败,静默(配置下次会话再写)
+        })
+    }
   }
 
   private setPages(pages: PageItem[], initialIndex = 0): void {
@@ -638,7 +667,21 @@ export class ViewerController {
     }
   }
 
+  /**
+   * 请求重绘(§性能):合并到下一动画帧执行,交互事件高频到达时
+   * 只保留最后一次状态,每帧最多一次整帧绘制。
+   */
   private render(): void {
+    if (this.renderQueued) return
+    this.renderQueued = true
+    requestAnimationFrame(() => {
+      this.renderQueued = false
+      this.paint()
+    })
+  }
+
+  /** 实际绘制(一帧一次;瓦片模式缺块时内部会发起异步解码并请求后续重绘) */
+  private paint(): void {
     const pagePath = this.currentPagePath
     if (this.tiled && this.pageBlob && pagePath) {
       this.renderer.renderTiled(this.transform, this.imageSize, {
@@ -650,8 +693,13 @@ export class ViewerController {
         decodeTile: (tx, ty) => this.decodeTile(tx, ty),
         removeTile: (tx, ty, bmp) => {
           this.tileCache.deleteIf(pagePath, tx, ty, bmp)
-        }
-      }, () => this.currentPagePath !== pagePath)
+        },
+        // 瓦片解码批次完成:请求一次重绘(瓦片已入缓存,下一帧统一上屏;
+        // 若期间无新交互,本次调度确保最后一批瓦片也能显示)
+        onTilesReady: () => this.render()
+        // isStale 还需覆盖"同页退出瓦片模式"(如 spread↔single 布局切换:
+        // pagePath 不变但整页渲染已接管画布,在途批次必须作废清理)
+      }, () => this.currentPagePath !== pagePath || !this.tiled)
     } else if (this.layoutMode === 'spread' && this.bitmap && this.rightBitmap) {
       this.renderer.renderSpread(this.transform, this.bitmap, this.rightBitmap, SPREAD_GAP)
     } else if (this.bitmap) {

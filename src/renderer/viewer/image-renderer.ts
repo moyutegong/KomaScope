@@ -4,9 +4,14 @@
  * 超大图(§4.4 超过 GPU 纹理上限约 8192px)启用瓦片渲染:
  * 仅绘制视口可见瓦片,缺失瓦片异步解码后重绘。
  */
-import { imageToScreen } from '../../shared/transform-model'
+import { imageToScreen, mipLevelForScale } from '../../shared/transform-model'
 import type { Size, ViewTransform } from '../../shared/transform-model'
-import { TILE_SIZE, tileOrigin, visibleTileRange } from '../../shared/tile-grid'
+import {
+  TILE_SIZE,
+  sortTilesByViewportDistance,
+  tileOrigin,
+  visibleTileRange
+} from '../../shared/tile-grid'
 import { mapWithConcurrency } from '../../shared/concurrency'
 
 /** 瓦片解码并发上限:过高会瞬间吃满 CPU/内存,过低首屏变慢(§12) */
@@ -20,6 +25,9 @@ export interface TileProvider {
   /** 移除缓存瓦片(解码结果被丢弃时同步清理;带位图身份校验,
    * 避免误删并发写入的新缓存) */
   removeTile?(tileX: number, tileY: number, bitmap: ImageBitmap): void
+  /** 瓦片解码批次完成后回调(已入缓存;请求一次整帧重绘,
+   * 覆盖解码期间变换变化导致跳过增量绘制的瓦片) */
+  onTilesReady?(): void
 }
 
 export class ImageRenderer {
@@ -29,6 +37,16 @@ export class ImageRenderer {
   private dpr = 1
   private viewportW = 0
   private viewportH = 0
+  /** 最近一次瓦片渲染使用的变换:解码完成时与批次快照比对,
+   * 一致才允许增量绘制(变换已变时旧位置绘制会造成错位) */
+  private lastTiledTransform: ViewTransform = { scale: 0, tx: 0, ty: 0 }
+  /** 显示缩放缓存(§性能):整页模式低倍率显示时的 2 的幂缩小位图。
+   * 以 bitmap 为 WeakMap key,翻页 close 后随 GC 自动释放;
+   * 条目内记录层级与 dpr,跨层/跨显示器缩放时重建 */
+  private readonly mipCache = new WeakMap<
+    ImageBitmap,
+    { canvas: HTMLCanvasElement; k: number; dpr: number }
+  >()
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -79,7 +97,7 @@ export class ImageRenderer {
     ctx.imageSmoothingQuality = 'high'
     const rotation = opts.rotation ?? 0
     if (rotation === 0 && !opts.flipH && !opts.flipV) {
-      ctx.drawImage(bitmap, t.tx, t.ty, bitmap.width * t.scale, bitmap.height * t.scale)
+      this.drawBitmap(bitmap, t)
       return
     }
     // 围绕图片中心旋转/镜像
@@ -90,7 +108,7 @@ export class ImageRenderer {
     ctx.rotate((rotation * Math.PI) / 180)
     ctx.scale(opts.flipH ? -1 : 1, opts.flipV ? -1 : 1)
     ctx.translate(-cx, -cy)
-    ctx.drawImage(bitmap, t.tx, t.ty, bitmap.width * t.scale, bitmap.height * t.scale)
+    this.drawBitmap(bitmap, t)
     ctx.restore()
   }
 
@@ -104,18 +122,22 @@ export class ImageRenderer {
     ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr)
     ctx.imageSmoothingEnabled = true
     ctx.imageSmoothingQuality = 'high'
-    ctx.drawImage(left, t.tx, t.ty, left.width * t.scale, left.height * t.scale)
+    this.drawBitmap(left, t)
     if (right) {
       const rightX = t.tx + (left.width + gap) * t.scale
-      ctx.drawImage(right, rightX, t.ty, right.width * t.scale, right.height * t.scale)
+      this.drawBitmap(right, { ...t, tx: rightX })
     }
   }
 
   /**
-   * 瓦片渲染(§4.4):绘制视口可见瓦片;缺失瓦片异步解码后整帧重绘。
+   * 瓦片渲染(§4.4):绘制视口可见瓦片;缺失瓦片异步解码后重绘。
+   * 缺失瓦片按到视口中心的距离排序解码(中心优先,§性能);
+   * 解码期间变换未变时单块完成即增量绘制(渐进填充,不等整批),
+   * 变换已变则跳过,由批次完成后的 onTilesReady 整帧重绘兜底。
    * isStale:翻页/取消后返回 true 时丢弃异步结果。
    */
   renderTiled(t: ViewTransform, imageSize: Size, provider: TileProvider, isStale: () => boolean): void {
+    this.lastTiledTransform = { ...t }
     const { ctx, canvas, dpr } = this
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr)
@@ -140,7 +162,13 @@ export class ImageRenderer {
       }
     }
     if (missing.length > 0 && !isStale()) {
-      void this.decodeMissingTiles(t, imageSize, provider, missing, isStale)
+      void this.decodeMissingTiles(
+        t,
+        imageSize,
+        provider,
+        sortTilesByViewportDistance(missing, this.viewportSize, t),
+        isStale
+      )
     }
   }
 
@@ -148,6 +176,58 @@ export class ImageRenderer {
     const { ctx, canvas } = this
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, canvas.width, canvas.height)
+  }
+
+  /**
+   * 绘制整页位图(§性能):显示倍率远小于 1 时从显示缩放缓存采样,
+   * 避免每帧对全分辨率源做 GPU 采样(4K 图 fitScreen 时源像素数
+   * 是显示像素的 4~16 倍)。目标尺寸恒等于 bitmap×scale,缩放精确。
+   */
+  private drawBitmap(bitmap: ImageBitmap, t: ViewTransform): void {
+    const mip = this.mipFor(bitmap, t.scale)
+    if (mip) {
+      const factor = Math.pow(2, -mip.k)
+      this.ctx.drawImage(
+        mip.canvas,
+        t.tx,
+        t.ty,
+        mip.canvas.width * (t.scale / factor),
+        mip.canvas.height * (t.scale / factor)
+      )
+    } else {
+      this.ctx.drawImage(bitmap, t.tx, t.ty, bitmap.width * t.scale, bitmap.height * t.scale)
+    }
+  }
+
+  /**
+   * 取/建显示缩放缓存(§性能):按当前 scale×dpr 选择 2 的幂层级,
+   * 缓存分辨率 ≥ 物理显示分辨率(锐度无损)且尽量接近(采样开销最小)。
+   * 层级或 dpr 变化时重建;bitmap 翻页 close 后条目随 WeakMap GC 释放。
+   */
+  private mipFor(
+    bitmap: ImageBitmap,
+    scale: number
+  ): { canvas: HTMLCanvasElement; k: number } | null {
+    // 防御:位图已 close(翻页竞态)时不能作为绘制源
+    // (ImageBitmap.closed 为运行时属性,TS DOM lib 未声明)
+    if ((bitmap as ImageBitmap & { closed?: boolean }).closed) return null
+    const k = mipLevelForScale(scale, this.dpr)
+    if (k <= 0) return null
+    const cached = this.mipCache.get(bitmap)
+    if (cached && cached.k === k && cached.dpr === this.dpr) return cached
+    const w = Math.max(1, Math.ceil(bitmap.width / 2 ** k))
+    const h = Math.max(1, Math.ceil(bitmap.height / 2 ** k))
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    const mctx = canvas.getContext('2d')
+    if (!mctx) return null
+    mctx.imageSmoothingEnabled = true
+    mctx.imageSmoothingQuality = 'high'
+    mctx.drawImage(bitmap, 0, 0, w, h)
+    const built = { canvas, k, dpr: this.dpr }
+    this.mipCache.set(bitmap, built)
+    return built
   }
 
   /** 绘制单个瓦片到屏幕(按瓦片在图片中的原点与变换换算)。
@@ -182,13 +262,22 @@ export class ImageRenderer {
     missing: { x: number; y: number }[],
     isStale: () => boolean
   ): Promise<void> {
+    const transformSnapshot = { ...t }
+    // 本批次中因变换变化而跳过增量绘制的瓦片数:>0 时批次完成后
+    // 需整帧重绘(瓦片已入缓存,重绘即可上屏);全部增量绘制则无需
+    let skipped = 0
     let results: { x: number; y: number; bmp: ImageBitmap | null }[]
     try {
-      results = await mapWithConcurrency(missing, TILE_DECODE_CONCURRENCY, async (m) => ({
-        x: m.x,
-        y: m.y,
-        bmp: await provider.decodeTile(m.x, m.y)
-      }))
+      results = await mapWithConcurrency(missing, TILE_DECODE_CONCURRENCY, async (m) => {
+        const bmp = await provider.decodeTile(m.x, m.y)
+        if (bmp && !isStale() && this.transformEquals(transformSnapshot, this.lastTiledTransform)) {
+          // 变换未变:单块完成即增量绘制,画面渐进填充(不等整批全部解码)
+          this.drawTile(t, imageSize, m.x, m.y, bmp)
+        } else if (bmp && !isStale()) {
+          skipped++
+        }
+        return { x: m.x, y: m.y, bmp }
+      })
     } catch {
       // 单瓦片解码失败不中断整批(错误隔离,§12);缺失瓦片下次交互再解码
       return
@@ -206,7 +295,13 @@ export class ImageRenderer {
       }
       return
     }
-    // 缺失瓦片已入缓存,整帧重绘(简单可靠)
-    this.renderTiled(t, imageSize, provider, isStale)
+    // 有跳过(解码期间变换变化):请求一次整帧重绘,把已入缓存的新瓦片
+    // 按当前变换统一绘制;无跳过时画面已通过增量绘制完整,不再重绘
+    if (skipped > 0) provider.onTilesReady?.()
+  }
+
+  /** 变换是否与快照一致(增量绘制前置条件) */
+  private transformEquals(a: ViewTransform, b: ViewTransform): boolean {
+    return a.scale === b.scale && a.tx === b.tx && a.ty === b.ty
   }
 }

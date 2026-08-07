@@ -8,6 +8,7 @@ import {
   fitScale,
   identityTransform,
   imageToScreen,
+  mipLevelForScale,
   screenToImage,
   translate,
   zoomAt,
@@ -120,5 +121,36 @@ describe('translate / 坐标互逆', () => {
     const round = screenToImage(t, imageToScreen(t, p))
     expect(round.x).toBeCloseTo(p.x, 6)
     expect(round.y).toBeCloseTo(p.y, 6)
+  })
+})
+
+describe('mipLevelForScale(显示缩放缓存层级)', () => {
+  it('scale×dpr ≥ 1 时不使用缓存(k=0)', () => {
+    expect(mipLevelForScale(1, 1)).toBe(0)
+    expect(mipLevelForScale(2, 1)).toBe(0)
+    expect(mipLevelForScale(0.5, 2)).toBe(0)
+  })
+
+  it('缓存倍率 2^-k 不小于物理显示倍率(锐度无损)', () => {
+    // 4K 图 fitScreen:dpr=2,scale=0.234 → 物理 0.468 → k=1(缓存 0.5)
+    expect(mipLevelForScale(0.234, 2)).toBe(1)
+    // dpr=1,scale=0.234 → k=2(缓存 0.25 ≥ 0.234)
+    expect(mipLevelForScale(0.234, 1)).toBe(2)
+    // scale=0.1,dpr=1 → k=3(缓存 0.125 ≥ 0.1)
+    expect(mipLevelForScale(0.1, 1)).toBe(3)
+  })
+
+  it('k 是满足条件的最小层级(缓存最接近显示倍率)', () => {
+    // 物理 0.75:k=0 已满足 2^0≥0.75 → 无需缓存
+    expect(mipLevelForScale(0.75, 1)).toBe(0)
+    // 物理 0.6:k=1(0.5 < 0.6 不满足),k=0(1 ≥ 0.6)→ 0
+    expect(mipLevelForScale(0.6, 1)).toBe(0)
+    // 物理 0.49:k=1(0.5 ≥ 0.49)
+    expect(mipLevelForScale(0.49, 1)).toBe(1)
+  })
+
+  it('极低倍率封顶 k=5', () => {
+    expect(mipLevelForScale(0.05, 1)).toBe(4)
+    expect(mipLevelForScale(0.01, 1)).toBe(5)
   })
 })

@@ -57,3 +57,26 @@ export function visibleTileRange(viewport: Size, imageSize: Size, t: ViewTransfo
 export function tileOrigin(tileX: number, tileY: number): { x: number; y: number } {
   return { x: tileX * TILE_SIZE, y: tileY * TILE_SIZE }
 }
+
+/**
+ * 缺失瓦片解码优先级(§性能):按瓦片中心到视口中心的屏幕距离升序排列,
+ * 使放大/平移时画面从用户注视的中心区域开始填充。纯函数、可单测。
+ */
+export function sortTilesByViewportDistance(
+  tiles: readonly { x: number; y: number }[],
+  viewport: Size,
+  t: ViewTransform
+): { x: number; y: number }[] {
+  if (tiles.length <= 1) return [...tiles]
+  const cx = viewport.width / 2
+  const cy = viewport.height / 2
+  const dist = (x: number, y: number): number => {
+    const origin = tileOrigin(x, y)
+    const sx = t.scale * (origin.x + TILE_SIZE / 2) + t.tx
+    const sy = t.scale * (origin.y + TILE_SIZE / 2) + t.ty
+    const dx = sx - cx
+    const dy = sy - cy
+    return dx * dx + dy * dy
+  }
+  return [...tiles].sort((a, b) => dist(a.x, a.y) - dist(b.x, b.y))
+}

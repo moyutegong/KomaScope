@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { TILE_SIZE, tileGridSize, tileOrigin, visibleTileRange } from '../src/shared/tile-grid'
+import {
+  TILE_SIZE,
+  sortTilesByViewportDistance,
+  tileGridSize,
+  tileOrigin,
+  visibleTileRange
+} from '../src/shared/tile-grid'
 import type { ViewTransform } from '../src/shared/transform-model'
 
 const viewport = { width: 1920, height: 1080 }
@@ -63,5 +69,48 @@ describe('tileOrigin', () => {
   it('瓦片原点 = 坐标 × TILE_SIZE', () => {
     expect(tileOrigin(0, 0)).toEqual({ x: 0, y: 0 })
     expect(tileOrigin(2, 3)).toEqual({ x: 2 * TILE_SIZE, y: 3 * TILE_SIZE })
+  })
+})
+
+describe('sortTilesByViewportDistance', () => {
+  it('视口中心对准图片中心时,中心瓦片优先', () => {
+    // 视口中心在图片 (4096, 4096),scale=1 → 中心瓦片 (1,1) 最优先
+    const t = transformAt(4096 - 960, 4096 - 540, 1)
+    const tiles = [
+      { x: 0, y: 0 },
+      { x: 3, y: 3 },
+      { x: 1, y: 1 },
+      { x: 2, y: 2 }
+    ]
+    const sorted = sortTilesByViewportDistance(tiles, viewport, t)
+    expect(sorted[0]).toEqual({ x: 1, y: 1 })
+    // 其余按到中心距离升序(角点最远)
+    expect(sorted[3]).toEqual({ x: 3, y: 3 })
+  })
+
+  it('scale<1(fitScreen)时视口中心对应瓦片仍最优先', () => {
+    // 8000×12000 图,scale=0.1 铺满视口:视口中心 (960,540) 对应图片 (9600,5400)
+    // → 该点所在瓦片 (4,2) 应排最前
+    const t = transformAt(0, 0, 0.1)
+    const tiles = [
+      { x: 3, y: 5 },
+      { x: 0, y: 0 },
+      { x: 4, y: 2 }
+    ]
+    const sorted = sortTilesByViewportDistance(tiles, viewport, t)
+    expect(sorted[0]).toEqual({ x: 4, y: 2 })
+  })
+
+  it('单元素与空列表原样返回(不改变输入)', () => {
+    const t = transformAt(0, 0, 1)
+    const single = [{ x: 1, y: 1 }]
+    expect(sortTilesByViewportDistance(single, viewport, t)).toEqual(single)
+    expect(sortTilesByViewportDistance([], viewport, t)).toEqual([])
+    const input = [
+      { x: 2, y: 0 },
+      { x: 0, y: 0 }
+    ]
+    sortTilesByViewportDistance(input, viewport, t)
+    expect(input[0]).toEqual({ x: 2, y: 0 })
   })
 })

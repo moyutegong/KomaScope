@@ -119,3 +119,22 @@ export function imageToScreen(t: ViewTransform, p: Point): Point {
 export function screenToImage(t: ViewTransform, p: Point): Point {
   return { x: (p.x - t.tx) / t.scale, y: (p.y - t.ty) / t.scale }
 }
+
+/**
+ * 显示缩放缓存层级(§性能):整页模式下显示倍率远小于 1 时,
+ * 每帧从全分辨率位图采样开销巨大(4K 图 fitScreen 时每帧读取数千万像素)。
+ * 按 2 的幂预生成缩小位图,绘制时从缓存采样。
+ * 层级 k:缓存倍率 = 2^-k,取满足 2^-k ≥ scale×dpr 的最小 k(物理像素下
+ * 缓存分辨率不低于显示分辨率,锐度无损),k=0 表示不需要缓存。
+ */
+export function mipLevelForScale(scale: number, dpr = 1): number {
+  const effective = scale * dpr
+  if (effective >= 1) return 0
+  let k = 0
+  let half = 0.5
+  while (half >= effective && k < 5) {
+    k++
+    half /= 2
+  }
+  return k
+}
