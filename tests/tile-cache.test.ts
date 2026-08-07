@@ -64,3 +64,26 @@ describe('TileCache(按页 LRU)', () => {
     expect(c.pageCount).toBe(1)
   })
 })
+
+describe('TileCache.deleteIf(身份校验删除)', () => {
+  it('值匹配时删除并返回 true', () => {
+    const c = new TileCache<string>(8)
+    c.set('p1', 0, 0, 'a')
+    expect(c.deleteIf('p1', 0, 0, 'a')).toBe(true)
+    expect(c.get('p1', 0, 0)).toBeUndefined()
+  })
+
+  it('值不匹配(已被新缓存覆盖)时不删除', () => {
+    const c = new TileCache<string>(8)
+    c.set('p1', 0, 0, 'old')
+    c.set('p1', 0, 0, 'new')
+    // 丢弃旧解码结果 'old' 时,新缓存 'new' 必须保留
+    expect(c.deleteIf('p1', 0, 0, 'old')).toBe(false)
+    expect(c.get('p1', 0, 0)).toBe('new')
+  })
+
+  it('键不存在时返回 false', () => {
+    const c = new TileCache<string>(8)
+    expect(c.deleteIf('p1', 3, 3, 'a')).toBe(false)
+  })
+})

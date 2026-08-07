@@ -76,6 +76,17 @@ export class TileCache<T> {
     this.pages.get(pagePath)?.delete(this.tileKey(tileX, tileY))
   }
 
+  /** 仅当缓存中仍是同一位图时删除(身份校验):丢弃过期解码结果时
+   * 避免误删并发写入的新缓存;命中返回 true */
+  deleteIf(pagePath: string, tileX: number, tileY: number, value: T): boolean {
+    const page = this.pages.get(pagePath)
+    if (!page) return false
+    const key = this.tileKey(tileX, tileY)
+    if (page.get(key) !== value) return false
+    page.delete(key)
+    return true
+  }
+
   clear(): void {
     this.pages.clear()
   }

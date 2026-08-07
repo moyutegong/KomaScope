@@ -483,6 +483,9 @@ export class ViewerController {
           this.fullBitmap = bmp
           return bmp
         } catch {
+          // 解码失败:重置在途标记,允许后续重试
+          // (否则 promise 永久缓存 null,瓦片模式白屏直到翻页)
+          this.fullBitmapPromise = null
           return null
         }
       })()
@@ -554,7 +557,9 @@ export class ViewerController {
       this.renderer.renderTiled(this.transform, this.imageSize, {
         getTile: (tx, ty) => this.tileCache.get(pagePath, tx, ty),
         decodeTile: (tx, ty) => this.decodeTile(tx, ty),
-        removeTile: (tx, ty) => this.tileCache.delete(pagePath, tx, ty)
+        removeTile: (tx, ty, bmp) => {
+          this.tileCache.deleteIf(pagePath, tx, ty, bmp)
+        }
       }, () => this.currentPagePath !== pagePath)
     } else if (this.layoutMode === 'spread' && this.bitmap && this.rightBitmap) {
       this.renderer.renderSpread(this.transform, this.bitmap, this.rightBitmap, SPREAD_GAP)
@@ -568,6 +573,8 @@ export class ViewerController {
   }
 
   private showEmpty(): void {
+    this.releaseFullBitmap()
+    this.pageBlob = null
     this.renderer.clear()
     this.renderer.setVisible(false)
   }

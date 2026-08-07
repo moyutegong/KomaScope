@@ -16,8 +16,9 @@ const TILE_DECODE_CONCURRENCY = 4
 export interface TileProvider {
   getTile(tileX: number, tileY: number): ImageBitmap | undefined
   decodeTile(tileX: number, tileY: number): Promise<ImageBitmap | null>
-  /** 移除缓存瓦片(解码结果被丢弃时同步清理,避免 closed 位图残留) */
-  removeTile?(tileX: number, tileY: number): void
+  /** 移除缓存瓦片(解码结果被丢弃时同步清理;带位图身份校验,
+   * 避免误删并发写入的新缓存) */
+  removeTile?(tileX: number, tileY: number, bitmap: ImageBitmap): void
 }
 
 export class ImageRenderer {
@@ -193,8 +194,10 @@ export class ImageRenderer {
       for (const r of results) {
         if (r.bmp) {
           // 先从缓存移除再 close:避免 closed 位图残留,翻回旧页时
-          // getTile 命中 closed bitmap 导致 drawImage 抛错
-          provider.removeTile?.(r.x, r.y)
+          // getTile 命中 closed bitmap 导致 drawImage 抛错。
+          // removeTile 带位图身份校验:旧批次完成时若同 key 已有
+          // 新缓存(翻回旧页后重新解码),不误删。
+          provider.removeTile?.(r.x, r.y, r.bmp)
           r.bmp.close()
         }
       }
