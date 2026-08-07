@@ -23,6 +23,13 @@ import type { StatusBar } from '../ui/statusbar'
 /** GPU 纹理上限阈值(§4.4:约 8192px),超过启用瓦片渲染 */
 const TILED_THRESHOLD = 8192
 
+/**
+ * 非 JPEG 整页解码像素上限(§12 风险应对):超过则拒绝整页解码,
+ * 防止恶意超大尺寸头声明(如 60000×60000)导致 GB 级内存 OOM。
+ * 8736×11648(≈1.02 亿像素)在限内;JPEG 局部解码路径不受限。
+ */
+const MAX_FULL_DECODE_PIXELS = 150_000_000
+
 /** 双页跨页左右页间距(图片像素,§13 P1) */
 const SPREAD_GAP = 16
 
@@ -45,8 +52,13 @@ export class ViewerController {
    * 超大图每块瓦片全解码一次是性能灾难 → 整页解码一次后从全图裁剪 */
   private fullBitmap: ImageBitmap | null = null
   private fullBitmapPromise: Promise<ImageBitmap | null> | null = null
+  /** 代际计数:releaseFullBitmap 时自增,在途解码完成后校验,
+   * 同页重载(spread→single 等)时丢弃旧代际结果,避免双全图解码并发 */
+  private fullBitmapGen = 0
   private tiledFromFull = false
   private tiled = false
+  /** 已知解码失败的瓦片坐标(避免失败后每次重绘都重新解码 → CPU 自旋) */
+  private failedTiles = new Set<string>()
   private transform: ViewTransform = identityTransform()
   private imageSize: Size = { width: 0, height: 0 }
   private fitMode: FitMode = 'fitScreen'
@@ -450,10 +462,32 @@ export class ViewerController {
 
   /** 进入瓦片模式(§4.4):保留 blob,按需解码可见瓦片 */
   private enterTiledMode(blob: Blob, imageSize: Size): void {
-    this.tiled = true
-    this.pageBlob = blob
     const page = this.pages[this.currentIndex]
     this.tiledFromFull = page ? mimeFromName(page.name) !== 'image/jpeg' : true
+    // 非 JPEG 需整页解码一次:超过像素上限直接拒绝,防止恶意尺寸 OOM
+    if (
+      this.tiledFromFull &&
+      page &&
+      imageSize.width > 0 &&
+      imageSize.height > 0 &&
+      imageSize.width * imageSize.height > MAX_FULL_DECODE_PIXELS
+    ) {
+      console.error(t('error.loadPage'), page.path, '图片过大,超出整页解码上限')
+      this.tiled = false
+      this.releaseFullBitmap()
+      this.pageBlob = null
+      // 与成功路径一致的位图清理,避免上一页位图泄漏
+      this.bitmap?.close()
+      this.bitmap = null
+      this.rightBitmap?.close()
+      this.rightBitmap = null
+      this.imageSize = { width: 0, height: 0 }
+      this.statusbar.setImageSize(0, 0)
+      this.showEmpty()
+      return
+    }
+    this.tiled = true
+    this.pageBlob = blob
     this.releaseFullBitmap()
     this.bitmap?.close()
     this.bitmap = null
@@ -470,13 +504,14 @@ export class ViewerController {
     if (this.fullBitmap) return this.fullBitmap
     if (!this.fullBitmapPromise) {
       const blob = this.pageBlob
+      const gen = this.fullBitmapGen
       if (!blob) return null
       this.fullBitmapPromise = (async () => {
         try {
           const bmp = await createImageBitmap(blob)
-          // 解码期间翻页/换源(pageBlob 已更换)或已 release:丢弃,
-          // 避免把旧页位图挂到新页上下文(串页 + 数百 MB 泄漏)
-          if (this.pageBlob !== blob) {
+          // 解码期间翻页/换源(pageBlob 更换或代际变化)或已 release:
+          // 丢弃,避免旧页位图挂到新上下文(串页/泄漏/双解码并发)
+          if (this.pageBlob !== blob || this.fullBitmapGen !== gen) {
             bmp.close()
             return null
           }
@@ -498,6 +533,8 @@ export class ViewerController {
     this.fullBitmap?.close()
     this.fullBitmap = null
     this.fullBitmapPromise = null
+    this.fullBitmapGen++
+    this.failedTiles.clear()
   }
 
   /**
@@ -527,6 +564,7 @@ export class ViewerController {
   private async decodeTile(tileX: number, tileY: number): Promise<ImageBitmap | null> {
     const page = this.pages[this.currentIndex]
     if (!page || !this.pageBlob) return null
+    const seq = this.loadSeq
     const origin = tileOrigin(tileX, tileY)
     const tileW = Math.min(TILE_SIZE, this.imageSize.width - origin.x)
     const tileH = Math.min(TILE_SIZE, this.imageSize.height - origin.y)
@@ -536,17 +574,24 @@ export class ViewerController {
       if (this.tiledFromFull) {
         // 从整页位图裁剪:毫秒级内存拷贝,避免每瓦片整图解码
         const full = await this.ensureFullBitmap()
-        if (!full) return null
+        if (!full) {
+          // 整页解码必败(full 为 null):记入黑名单避免每次交互重试
+          if (this.loadSeq === seq) this.failedTiles.add(`${tileX}:${tileY}`)
+          return null
+        }
         // 解码期间翻页会 close fullBitmap,裁剪抛 InvalidStateError → catch 静默
         bitmap = await createImageBitmap(full, origin.x, origin.y, tileW, tileH)
       } else {
         // JPEG:Chromium 支持源矩形部分解码,按瓦片解码内存最优
         bitmap = await createImageBitmap(this.pageBlob, origin.x, origin.y, tileW, tileH)
       }
+      this.failedTiles.delete(`${tileX}:${tileY}`)
       this.tileCache.set(this.pageCacheKey(page), tileX, tileY, bitmap)
       return bitmap
     } catch {
-      // 翻页竞态(位图已 close)或解码失败:静默,缺失瓦片下次交互再解码
+      // 解码失败或翻页竞态:仅当仍在本页时记入黑名单,
+      // 迟到失败(翻页后 resolve)不得污染新页同坐标瓦片
+      if (this.loadSeq === seq) this.failedTiles.add(`${tileX}:${tileY}`)
       return null
     }
   }
@@ -555,7 +600,11 @@ export class ViewerController {
     const pagePath = this.currentPagePath
     if (this.tiled && this.pageBlob && pagePath) {
       this.renderer.renderTiled(this.transform, this.imageSize, {
-        getTile: (tx, ty) => this.tileCache.get(pagePath, tx, ty),
+        getTile: (tx, ty) => {
+          const key = `${tx}:${ty}`
+          if (this.failedTiles.has(key)) return null
+          return this.tileCache.get(pagePath, tx, ty)
+        },
         decodeTile: (tx, ty) => this.decodeTile(tx, ty),
         removeTile: (tx, ty, bmp) => {
           this.tileCache.deleteIf(pagePath, tx, ty, bmp)

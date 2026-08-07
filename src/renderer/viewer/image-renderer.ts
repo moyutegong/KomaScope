@@ -14,7 +14,8 @@ const TILE_DECODE_CONCURRENCY = 4
 
 /** 瓦片提供者:由 ViewerController 实现(数据源 + TileCache) */
 export interface TileProvider {
-  getTile(tileX: number, tileY: number): ImageBitmap | undefined
+  /** 返回已解码瓦片;null 表示已知解码失败(跳过,不再请求);undefined 表示未解码 */
+  getTile(tileX: number, tileY: number): ImageBitmap | undefined | null
   decodeTile(tileX: number, tileY: number): Promise<ImageBitmap | null>
   /** 移除缓存瓦片(解码结果被丢弃时同步清理;带位图身份校验,
    * 避免误删并发写入的新缓存) */
@@ -131,6 +132,8 @@ export class ImageRenderer {
         const bitmap = provider.getTile(tx, ty)
         if (bitmap) {
           this.drawTile(t, imageSize, tx, ty, bitmap)
+        } else if (bitmap === null) {
+          // 已知解码失败:跳过,避免每次重绘都重新请求导致 CPU 自旋
         } else {
           missing.push({ x: tx, y: ty })
         }
