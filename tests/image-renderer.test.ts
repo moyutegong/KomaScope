@@ -5,7 +5,7 @@
  * - 失效清理:isStale(翻页/退出瓦片模式)时丢弃并清理解码结果
  * 通过假 canvas / 假 2d context 在 node 环境验证绘制调用。
  */
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ImageRenderer } from '../src/renderer/viewer/image-renderer'
 import type { TileProvider } from '../src/renderer/viewer/image-renderer'
 import type { Size, ViewTransform } from '../src/shared/transform-model'
@@ -54,7 +54,8 @@ function makeRenderer(): { renderer: ImageRenderer; ctx: CtxMock } {
 
 const imageSize: Size = { width: 4096, height: 4096 }
 const transform: ViewTransform = { scale: 1, tx: 0, ty: 0 }
-const tileBitmap = { width: 2048, height: 2048 } as ImageBitmap
+/** 假位图:含 close mock,isStale 清理路径会调用它 */
+const tileBitmap = { width: 2048, height: 2048, close: vi.fn() } as unknown as ImageBitmap
 
 interface MockProvider {
   getTile: ReturnType<typeof vi.fn>
@@ -85,6 +86,10 @@ async function flushMicrotasks(): Promise<void> {
 }
 
 describe('ImageRenderer.renderTiled 渐进显示', () => {
+  beforeEach(() => {
+    ;(tileBitmap.close as ReturnType<typeof vi.fn>).mockClear()
+  })
+
   it('缺失瓦片解码完成且变换未变:单块立即增量绘制', async () => {
     const { renderer, ctx } = makeRenderer()
     const provider = makeProvider()
@@ -128,7 +133,7 @@ describe('ImageRenderer.renderTiled 渐进显示', () => {
     expect(provider.onTilesReady).toHaveBeenCalledTimes(1)
   })
 
-  it('isStale(翻页/退出瓦片模式):不绘制,清理解码结果', async () => {
+  it('isStale(翻页/退出瓦片模式):不绘制,清理解码结果并 close 位图', async () => {
     const { renderer, ctx } = makeRenderer()
     let stale = false
     const provider = makeProvider()
@@ -136,8 +141,9 @@ describe('ImageRenderer.renderTiled 渐进显示', () => {
     stale = true // 批次在途时翻页
     await flushMicrotasks()
     expect(ctx.drawImage).not.toHaveBeenCalled()
-    // 解码结果从缓存移除并交还调用方关闭
+    // 解码结果从缓存移除、位图 close 交还(无 unhandled rejection)
     expect(provider.removeTile).toHaveBeenCalledWith(0, 0, tileBitmap)
+    expect(tileBitmap.close).toHaveBeenCalledTimes(1)
     expect(provider.onTilesReady).not.toHaveBeenCalled()
   })
 })

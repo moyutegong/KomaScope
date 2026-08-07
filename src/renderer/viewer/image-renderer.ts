@@ -290,7 +290,12 @@ export class ImageRenderer {
           // removeTile 带位图身份校验:旧批次完成时若同 key 已有
           // 新缓存(翻回旧页后重新解码),不误删。
           provider.removeTile?.(r.x, r.y, r.bmp)
-          r.bmp.close()
+          try {
+            r.bmp.close()
+          } catch {
+            // close 失败(位图异常)静默:缓存已移除,资源由 GC 兜底,
+            // 不让解码结果的清理动作炸掉渲染路径
+          }
         }
       }
       return
