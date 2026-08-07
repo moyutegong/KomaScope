@@ -395,20 +395,11 @@ export class ViewerController {
       // 单页布局超限由 enterTiledMode 按格式判断(JPEG 局部解码不受限)
       if (
         this.layoutMode === 'spread' &&
-        exceedsFullDecodeLimit(page.width, page.height)
+        (exceedsFullDecodeLimit(page.width, page.height) ||
+          (index + 1 < this.pages.length &&
+            exceedsFullDecodeLimit(this.pages[index + 1].width, this.pages[index + 1].height)))
       ) {
-        console.error(t('error.loadPage'), page.path, '图片过大,超出整页解码上限')
-        right?.close()
-        this.tiled = false
-        this.pageBlob = null
-        this.releaseFullBitmap()
-        this.bitmap?.close()
-        this.bitmap = null
-        this.rightBitmap?.close()
-        this.rightBitmap = null
-        this.imageSize = { width: 0, height: 0 }
-        this.statusbar.setImageSize(0, 0)
-        this.showEmpty()
+        this.rejectOversized(page, right)
         return
       }
 
@@ -427,7 +418,15 @@ export class ViewerController {
         right?.close()
         return
       }
-      // 元数据未知(如 AVIF)但实际超阈值 → 降级为瓦片模式(单页布局)
+      // 元数据未知(如 AVIF)实际超限的兜底:超像素上限直接拒绝
+      if (exceedsFullDecodeLimit(bitmap.width, bitmap.height)) {
+        bitmap.close()
+        right?.close()
+        this.rejectOversized(page, right)
+        return
+      }
+      // 元数据未知但实际超 GPU 阈值 → 降级为瓦片模式(单页布局;
+      // spread 无瓦片路径,超限已在上方拒绝,否则保持整页解码)
       if (
         this.layoutMode !== 'spread' &&
         (bitmap.width > TILED_THRESHOLD || bitmap.height > TILED_THRESHOLD)
@@ -488,24 +487,29 @@ export class ViewerController {
     return res.blob()
   }
 
+  /** 拒绝超像素上限的图片(§12):与成功路径一致的完整状态清理 */
+  private rejectOversized(page: PageItem, right: ImageBitmap | null): void {
+    console.error(t('error.loadPage'), page.path, '图片过大,超出整页解码上限')
+    right?.close()
+    this.tiled = false
+    this.pageBlob = null
+    this.releaseFullBitmap()
+    this.bitmap?.close()
+    this.bitmap = null
+    this.rightBitmap?.close()
+    this.rightBitmap = null
+    this.imageSize = { width: 0, height: 0 }
+    this.statusbar.setImageSize(0, 0)
+    this.showEmpty()
+  }
+
   /** 进入瓦片模式(§4.4):保留 blob,按需解码可见瓦片 */
   private enterTiledMode(blob: Blob, imageSize: Size): void {
     const page = this.pages[this.currentIndex]
     this.tiledFromFull = page ? mimeFromName(page.name) !== 'image/jpeg' : true
     // 非 JPEG 需整页解码一次:超过像素上限直接拒绝,防止恶意尺寸 OOM
     if (this.tiledFromFull && exceedsFullDecodeLimit(imageSize.width, imageSize.height)) {
-      console.error(t('error.loadPage'), page.path, '图片过大,超出整页解码上限')
-      this.tiled = false
-      this.releaseFullBitmap()
-      this.pageBlob = null
-      // 与成功路径一致的位图清理,避免上一页位图泄漏
-      this.bitmap?.close()
-      this.bitmap = null
-      this.rightBitmap?.close()
-      this.rightBitmap = null
-      this.imageSize = { width: 0, height: 0 }
-      this.statusbar.setImageSize(0, 0)
-      this.showEmpty()
+      this.rejectOversized(page, null)
       return
     }
     this.tiled = true
