@@ -1,12 +1,15 @@
-"""Generate KomaScope wordmark icon (512x512 PNG) with Pillow.
+"""Generate KomaScope wordmark app icon (512x512 PNG) with Pillow.
 
 Design: dark background, "KomaScope" wordmark in bold white with a
 blue (#4a9eff) outline, soft drop shadow and a subtle white→light-blue
 vertical gradient fill — matching the app's accent color.
 
+Only the EXE/installer icon (resources/icon.png) uses this wordmark;
+the window title-bar icon (resources/window-icon.png) keeps the lucide
+"image" open-source icon, rendered by scripts/generate-window-icon.js.
+
 Usage: python scripts/generate-logo-icon.py
-Writes resources/icon.png and resources/window-icon.png (same artwork).
-Requires Pillow: pip install pillow
+Writes resources/icon.png. Requires Pillow: pip install pillow
 """
 import os
 import sys
@@ -98,9 +101,8 @@ def main():
         canvas.alpha_composite(art, (x, y))
         img = canvas
 
-    for name in ("resources/icon.png", "resources/window-icon.png"):
-        img.save(name)
-        print(f"{name} written:", os.path.getsize(name), "bytes")
+    img.save("resources/icon.png")
+    print("resources/icon.png written:", os.path.getsize("resources/icon.png"), "bytes")
 
 
 if __name__ == "__main__":
