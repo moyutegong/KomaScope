@@ -91,7 +91,7 @@ export interface KomaScopeApi {
   scanArchive: (archivePath: string) => Promise<ScanResult>
   /** 按条目名读取压缩包内单张图片字节(§13 P0) */
   readArchiveEntry: (archivePath: string, entryName: string) => Promise<Uint8Array>
-  readMeta: (path: string) => Promise<{ width: number; height: number }>
+  readMeta: (path: string, archiveEntry?: string) => Promise<{ width: number; height: number }>
   /** 路径类型判定(拖拽导入:目录 / 文件,FR-2) */
   statPath: (path: string) => Promise<PathStat>
   /** 从拖拽的 File 对象取真实路径(Electron 30+ 移除 File.path,需经 webUtils) */
@@ -101,6 +101,20 @@ export interface KomaScopeApi {
    * 渲染进程 `fetch(url)` 后 `createImageBitmap(res.body)` 增量解码(4.2 / NFR-2)。
    */
   fileUrl: (path: string) => string
+  /**
+   * 构造 `komascope-thumb://` 原生图源 URL(主进程 sharp 流式缩放,§性能/§格式):
+   * - 缩略图:`imageSourceUrl(path, { width: 192 })`
+   * - 超高清分层:`imageSourceUrl(path, { region: { x, y, width, height } })`
+   * 压缩包源传 `archiveEntry`。渲染进程直接用作 <img src>。
+   */
+  imageSourceUrl: (
+    path: string,
+    opts?: {
+      width?: number
+      archiveEntry?: string
+      region?: { x: number; y: number; width: number; height: number }
+    }
+  ) => string
   getConfig: () => Promise<AppConfig>
   setConfig: (patch: Partial<AppConfig>) => Promise<AppConfig>
   /** 原子移除最近文件夹历史(主进程内过滤,避免连续删除竞态),返回删除后列表 */

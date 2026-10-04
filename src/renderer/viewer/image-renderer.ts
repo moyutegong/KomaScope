@@ -130,6 +130,32 @@ export class ImageRenderer {
   }
 
   /**
+   * 绘制"图片区域位图"(§性能/§格式):bitmap 代表图片中 region 区域,
+   * 按变换映射到屏幕。超高清图与非 Chromium 可解码格式(TIFF/HEIC/JXL…)
+   * 由主进程 sharp 按视口区域流式渲染,渲染进程只持有可见区域,
+   * 内存与图片原始尺寸解耦,彻底突破 8192 纹理上限与整页解码上限。
+   */
+  renderRegion(
+    t: ViewTransform,
+    bitmap: ImageBitmap,
+    region: { x: number; y: number; width: number; height: number }
+  ): void {
+    const { ctx, canvas, dpr } = this
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr)
+    ctx.imageSmoothingEnabled = true
+    ctx.imageSmoothingQuality = 'high'
+    const screen = imageToScreen(t, { x: region.x, y: region.y })
+    ctx.drawImage(
+      bitmap,
+      screen.x,
+      screen.y,
+      region.width * t.scale,
+      region.height * t.scale
+    )
+  }
+
+  /**
    * 瓦片渲染(§4.4):绘制视口可见瓦片;缺失瓦片异步解码后重绘。
    * 缺失瓦片按到视口中心的距离排序解码(中心优先,§性能);
    * 解码期间变换未变时单块完成即增量绘制(渐进填充,不等整批),

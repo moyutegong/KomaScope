@@ -229,6 +229,72 @@ button:focus-visible {
   background: rgba(255, 92, 92, 0.15);
 }
 
+/* --- 缩略图网格(§用户需求:先看缩略图再选图) --- */
+.sidebar-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: calc(8px * var(--ui-scale));
+  align-content: start;
+  padding: calc(8px * var(--ui-scale)) calc(10px * var(--ui-scale)) calc(12px * var(--ui-scale));
+}
+
+.thumb {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  aspect-ratio: 3 / 4;
+  background: rgba(255, 255, 255, 0.04);
+  border: calc(2px * var(--ui-scale)) solid transparent;
+  border-radius: calc(6px * var(--ui-scale));
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+}
+
+.thumb:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(calc(-1px * var(--ui-scale)));
+}
+
+.thumb-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 calc(6px * var(--ui-scale)) var(--accent-soft);
+}
+
+.thumb-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* 序号角标:左下角,便于与状态栏页码对照 */
+.thumb-badge {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  padding: 0 calc(5px * var(--ui-scale));
+  font-size: calc(11px * var(--ui-scale));
+  line-height: calc(16px * var(--ui-scale));
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(0, 0, 0, 0.55);
+  border-top-right-radius: calc(5px * var(--ui-scale));
+}
+
+/* 解码失败回退:文本行仍可点击 */
+.thumb-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.thumb-fallback-label {
+  font-size: calc(13px * var(--ui-scale));
+  color: var(--text-dim);
+}
+
 /* --- 工具栏 --- */
 .toolbar {
   display: flex;
@@ -479,6 +545,23 @@ button:focus-visible {
   margin-right: calc(4px * var(--ui-scale));
   filter: drop-shadow(0 0 calc(4px * var(--ui-scale)) rgba(74, 158, 255, 0.5));
   /* 小图标发光 */
+}
+
+/* 慢图解码提示(§性能):大图解码 >800ms 时显示 */
+.status-busy {
+  color: var(--accent);
+  animation: status-busy-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes status-busy-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+
+  50% {
+    opacity: 1;
+  }
 }
 
 /* --- 沉浸模式动画保持不变 --- */

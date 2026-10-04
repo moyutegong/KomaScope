@@ -84,3 +84,29 @@ console.log(`新实现:单块完成即增量绘制 → 首块 ${results.progress
 console.log('== setConfig IPC 防抖 ==')
 console.log(`旧实现:每事件 1 次 IPC → ${results.ipc.oldPerSec} 次/秒`)
 console.log(`新实现:150ms 防抖合并 → ≤${results.ipc.newPerSec} 次/秒(减少 ${results.ipc.reducedPct}%)`)
+
+// 5) 超高清:整页解码 vs 视口区域渲染(内存与耗时)
+console.log('== 超高清图:整页解码 vs 视口区域渲染 ==')
+const huge = [
+  ['300M 像素 20000×15000', 20000, 15000],
+  ['100M 像素 12000×9000', 12000, 9000]
+]
+const viewport = { w: 1920, h: 1080 }
+for (const [name, w, h] of huge) {
+  // 整页 RGBA 解码内存
+  const fullMB = (w * h * 4) / (1024 * 1024)
+  // 视口区域(含 25% 外扩)按屏幕物理分辨率输出:内存 ≈ 显示像素 × 4
+  const regionMB = (viewport.w * 1.5 * viewport.h * 1.5 * 4) / (1024 * 1024)
+  console.log(
+    `${name.padEnd(26)} 整页解码 ${fullMB.toFixed(0)}MB → 区域渲染 ~${regionMB.toFixed(0)}MB` +
+      ` (${Math.round(fullMB / regionMB)}× 减少)`
+  )
+}
+
+// 6) 缩略图网格:懒加载 vs 一次性加载
+console.log('== 缩略图网格(200 页)==')
+const pages = 200
+const thumbKB = 6
+const visible = 12
+console.log(`旧实现:一次性请求 ${pages} 张 → ~${((pages * thumbKB) / 1024).toFixed(1)}MB 解码`)
+console.log(`新实现:仅可视区 ${visible} 张懒加载 → ~${((visible * thumbKB) / 1024).toFixed(2)}MB(减少 ${Math.round((1 - visible / pages) * 100)}%)`)

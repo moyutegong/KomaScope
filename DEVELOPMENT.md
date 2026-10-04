@@ -73,7 +73,7 @@
 | 构建 | electron-vite + electron-builder | electron-vite 一体化开发/构建主进程+渲染进程;electron-builder 出 NSIS/dmg 安装包 |
 | 渲染层 | HTML5 + Canvas 2D | 图片绘制用 `<canvas>`(可精确控制 DPR 与瓦片),UI 面板用 DOM |
 | UI 框架 | 不使用重型框架 | 阅读器核心是高性能变换渲染,Vue/React 收益低且增加包体;UI 仅工具栏/状态栏/设置面板,Vanilla TS 足够 |
-| 图片解码 | 浏览器原生 `createImageBitmap()` + `ImageDecoder`(可选) | 异步解码不阻塞主线程,支持渐进式 |
+| 图片解码 | 浏览器原生 `createImageBitmap()` + 主进程 **sharp(libvips)** | 常见格式走 Chromium 原生解码;超高清图与 Chromium 不可解码格式(TIFF/SVG/HEIC/JXL/JP2)由 sharp 按视口区域流式转码,内存与图片尺寸解耦 |
 | 配置持久化 | `electron-store`(或自写 JSON 读写) | 轻量、可靠,配置为纯数据无副作用 |
 | 状态管理 | 自写轻量 store(事件发布/订阅) | 避免引入 Redux 等重依赖 |
 
@@ -119,14 +119,18 @@
 | --- | --- | --- |
 | `folder:open` | R→M | 打开系统目录选择器,返回图片文件列表(自然排序) |
 | `folder:scan` | R→M | 扫描指定目录,返回 `{ path, name, width, height, size }[]` |
-| `file:readMeta` | R→M | 读取单张图片尺寸(不解码全图,仅解析头部) |
-| `file:stream` | R→M | 按页索引流式读取图片字节:主进程 `net.handleFileOpen` 返回 Web Stream,渲染进程边取边解码 |
+| `archive:scan` / `archive:read` | R→M | 扫描 zip/cbz 条目列表 / 读取单条目字节(§13 P0) |
+| `file:readMeta` | R→M | 读取单张图片尺寸(头部解析;失败回退 sharp metadata;支持压缩包条目) |
+| `komascope-file://` 协议 | R→M | 渲染进程 `fetch` 流式读取本地图片字节(4.2) |
+| `komascope-thumb://` 协议 | R→M | **sharp 原生图源**:`?w=` 缩略图 / `?x=&y=&rw=&rh=` 区域裁剪,返回渐进 JPEG(带 ETag 协商缓存) |
 | `config:get` / `config:set` | R→M | 配置读写,主进程落盘 |
 | `window:getInfo` | R→M | 获取 `{ bounds, workArea, dpr, screenId }` |
 | `window:setBounds` | R→M | 设置窗口位置/大小(拖拽窗口结束、适应屏幕时调用) |
 | `window:toggleFullscreen` | R→M | 全屏切换 |
 
 > 图片数据通过 Web Streams 传输(`net.handleFileOpen`),渲染进程以 `createImageBitmap(stream)` 增量解码;4K 大图(数十 MB)无需整图载入 IPC 内存,主进程不参与像素处理。
+>
+> 超高清图与 Chromium 不可解码格式改经 `komascope-thumb://` 由主进程 sharp 按视口区域流式渲染(§4.4),渲染进程只持有可见区域,内存与图片原始尺寸解耦。
 >
 > **可扩展性**:文件访问统一走 `SourceProvider` 抽象(文件夹源为首个实现;zip/cbz 压缩包源为后续扩展),阅读层不感知数据来源。
 
@@ -169,12 +173,16 @@ custom     : 用户缩放,记录百分比,翻页后保留
 | 高分屏模糊 | Canvas 物理分辨率 = CSS 尺寸 × `devicePixelRatio`;监听 `window.devicePixelRatio` 变化重建画布 |
 | 窗口默认大小 | 首次启动按 `screen.getPrimaryDisplay().workArea` 取 `min(工作区 88%, 3360×1890)`;多显示器启动时定位到上次所在显示器 |
 | UI 控件尺寸 | 全局 `--ui-scale` 系数 = `dpr 相关基准(以 150% 为 1.0)`,工具栏/状态栏字号与间距按系数缩放,4K 下控件不过小、1080p 下不过大 |
-| 超大图片 | 超过 GPU 纹理上限(约 8192px)的图启用**瓦片渲染**:离屏 canvas 按 2048×2048 切片,仅绘制视口可见瓦片,平移缩放时增量绘制 |
+| 超大图片 | 超过 GPU 纹理上限(约 8192px)的 JPEG 启用**瓦片渲染**:离屏 canvas 按 2048×2048 切片,仅绘制视口可见瓦片,平移缩放时增量绘制 |
+| 超高清/新格式 | 超过 8192px 的非 JPEG,以及 Chromium 不可解码格式(TIFF/SVG/HEIC/JXL/JP2),改由主进程 **sharp(libvips) 按视口区域流式渲染**(`komascope-thumb://` 协议 + `extract` 区域裁剪):内存与图片原始尺寸解耦,1 亿像素图与千万像素图占用相同,彻底突破纹理上限与整页解码像素上限;先出低清预览再升级到视口分辨率,缩放/平移经 120ms 防抖按"覆盖率 + 清晰度阈值(0.85)"重取 |
+| 格式支持 | 14 种扩展名:`jpg/jpeg/png/webp/gif/bmp/avif` 由 Chromium 直接解码,`tif/tiff/svg/heic/heif/jxl/jp2` 经 sharp 转码;尺寸元数据头部解析失败时由 `sharp().metadata()` 兜底 |
+| 缩略图网格 | 侧栏图片区为缩略图网格,经 sharp 生成(192px 目标宽,`IntersectionObserver` 懒加载 + 200px 预取);点击即跳页,当前页高亮,解码失败回退文本格 |
 | 瓦片渐进显示 | 缺失瓦片按到视口中心距离排序解码(中心优先);单块解码完成且变换未变时立即增量绘制,画面渐进填充而非整批等待;变换已变由批次完成回调整帧重绘兜底 |
 | 渲染合并 | 变换(缩放/平移)立即写入状态,实际重绘经 `requestAnimationFrame` 合并,每帧最多一次整帧绘制(滚轮/拖拽事件 100Hz+ → 60fps) |
 | 显示缩放缓存 | 整页模式低倍率显示(2^-k ≥ scale×dpr)时使用 2 的幂预缩小位图采样,每帧 GPU 采样像素降至 1/4~1/16,锐度无损(缓存分辨率 ≥ 物理显示分辨率) |
 | 高频 IPC 防抖 | 缩放交互期间 `setConfig` 150ms 防抖合并(主进程另 500ms 落盘防抖);页面卸载时冲刷防抖中配置,最后状态不丢失 |
-| 翻页性能 | 预解码策略:当前页 + 后一页(向前翻时加前一页),LRU 容量 8 页 |
+| 慢图提示 | 大图/原生区域解码超过 800ms 时状态栏显示"解码中…"脉冲提示,完成或失败后自动清除 |
+| 翻页性能 | 预解码策略:当前页 + 后 2 页 + 前 1 页(双页布局按 2 步),LRU 容量 8 页;原生图源页与超大页跳过(按需渲染) |
 | 全屏 | 全屏即获得完整 3840×2160 视口,适配模式自动重算 |
 | 缩放流畅度 | 缩放期间用 CSS `transform` 合成层做预览,松手后重绘高精度画面(可选优化) |
 
@@ -250,30 +258,40 @@ KomaScope/
 │   ├── main/                     # 主进程
 │   │   ├── index.ts              # 入口:创建窗口、注册 IPC
 │   │   ├── window-manager.ts     # 窗口创建/几何记忆/多显示器/全屏
-│   │   ├── file-service.ts       # 目录扫描、自然排序、图片元数据
+│   │   ├── file-service.ts       # 目录扫描、自然排序、图片元数据(sharp 兜底)
+│   │   ├── zip-source.ts         # zip/cbz 压缩包源(fflate 流式读取)
+│   │   ├── image-source.ts       # sharp 原生图源:缩略图 / 视口区域流式渲染
 │   │   ├── config-store.ts       # 配置读写(防抖落盘)
-│   │   └── ipc.ts                # IPC 路由与参数校验
+│   │   ├── menu.ts               # 应用菜单
+│   │   └── ipc.ts                # IPC 路由与参数校验 + 自定义协议
 │   ├── preload/
 │   │   └── index.ts              # contextBridge 白名单 API
+│   ├── shared/                   # 主/渲染共享纯逻辑(可单测)
+│   │   ├── types.ts              # IPC 协议类型、页面模型、配置模型
+│   │   ├── transform-model.ts    # 变换数学 + mip 层级
+│   │   ├── native-view.ts        # 原生图源视口区域与分辨率计算
+│   │   ├── tile-grid.ts          # 瓦片网格与优先级排序
+│   │   ├── tile-cache.ts         # 瓦片 + 解码 LRU
+│   │   ├── image-size.ts         # 图片头部尺寸解析
+│   │   ├── mime.ts               # MIME 推断 + Chromium 可解码判定
+│   │   ├── natural-sort.ts       # 自然排序(1,2,10,11)
+│   │   ├── geometry.ts           # 窗口几何工具
+│   │   └── concurrency.ts        # 并发映射工具
 │   └── renderer/
 │       ├── index.html
 │       ├── app.ts                # 启动装配
-│       ├── shared/
-│       │   ├── types.ts          # IPC 协议类型、页面模型
-│       │   └── natural-sort.ts   # 自然排序(1,2,10,11)
+│       ├── i18n.ts               # 中英文文案
+│       ├── styles.css
 │       ├── viewer/
-│       │   ├── viewer-controller.ts   # 状态机:页/适配/锁定/变换
-│       │   ├── transform-model.ts     # 纯函数变换数学(可单测)
-│       │   ├── image-renderer.ts      # Canvas 绘制、DPR、瓦片
-│       │   ├── tile-cache.ts          # 瓦片 + 解码 LRU
+│       │   ├── viewer-controller.ts   # 状态机:页/适配/锁定/变换/瓦片/原生
+│       │   ├── image-renderer.ts      # Canvas 绘制、DPR、瓦片、区域
 │       │   └── input-controller.ts    # 输入映射
 │       └── ui/
 │           ├── toolbar.ts
 │           ├── statusbar.ts
-│           └── settings-panel.ts
-└── tests/
-    ├── transform-model.test.ts   # 锚点缩放/锁定/适配 单测
-    └── natural-sort.test.ts
+│           ├── sidebar.ts             # 历史 + 缩略图网格
+│           └── long-view.ts           # 长图模式
+└── tests/                        # vitest 单元测试
 ```
 
 ---
@@ -282,13 +300,16 @@ KomaScope/
 
 ```
 打开文件夹(按钮/拖拽)
-  → 主进程 scan:读取目录 → 过滤图片扩展名 → 自然排序 → 读取尺寸元数据
+  → 主进程 scan:读取目录 → 过滤图片扩展名 → 自然排序 → 读取尺寸元数据(头部解析,失败回退 sharp)
   → IPC 返回页面列表 PageList
+  → 侧栏缩略图网格:经 komascope-thumb:// 懒加载 sharp 生成的缩略图(192px)
   → ViewerController 定位到上次阅读页(可选,记住页码)
-  → 请求当前页 file:stream → createImageBitmap(stream) 流式解码
-  → ImageRenderer 按 TransformModel 状态绘制到 Canvas(考虑 DPR/瓦片)
+  → 分流:常见格式且未超阈值 → file:stream + createImageBitmap 流式解码
+          超大 JPEG → 瓦片模式(按需局部解码)
+          超高清非 JPEG / 不可解码格式 → komascope-thumb:// 视口区域渲染(先预览后升级)
+  → ImageRenderer 按 TransformModel 状态绘制到 Canvas(考虑 DPR/瓦片/区域)
   → 用户交互 → InputController 更新 TransformModel → 重绘 → 状态栏同步
-  → 缩放/平移停止 → 配置防抖落盘
+  → 缩放/平移停止 → 配置防抖落盘(原生图源另按覆盖率/清晰度阈值防抖重取区域)
 ```
 
 ---

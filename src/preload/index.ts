@@ -11,6 +11,29 @@ function toFileUrl(path: string): string {
   return 'komascope-file://' + encodeURI('/' + path.replace(/\\/g, '/'))
 }
 
+/** 构造 komascope-thumb:// URL(sharp 原生图源:缩略图/超高清分层) */
+function toImageSourceUrl(
+  path: string,
+  opts?: {
+    width?: number
+    archiveEntry?: string
+    region?: { x: number; y: number; width: number; height: number }
+  }
+): string {
+  const params = new URLSearchParams()
+  if (opts?.width !== undefined) params.set('w', String(opts.width))
+  if (opts?.archiveEntry) params.set('entry', opts.archiveEntry)
+  if (opts?.region) {
+    params.set('x', String(opts.region.x))
+    params.set('y', String(opts.region.y))
+    params.set('rw', String(opts.region.width))
+    params.set('rh', String(opts.region.height))
+  }
+  const base = 'komascope-thumb://' + encodeURI('/' + path.replace(/\\/g, '/'))
+  const qs = params.toString()
+  return qs ? `${base}?${qs}` : base
+}
+
 const api: KomaScopeApi = {
   openFolderDialog: () => ipcRenderer.invoke('folder:open'),
   openArchiveDialog: () => ipcRenderer.invoke('archive:open'),
@@ -18,10 +41,11 @@ const api: KomaScopeApi = {
   scanArchive: (archivePath) => ipcRenderer.invoke('archive:scan', archivePath),
   readArchiveEntry: (archivePath, entryName) =>
     ipcRenderer.invoke('archive:read', archivePath, entryName),
-  readMeta: (path) => ipcRenderer.invoke('file:readMeta', path),
+  readMeta: (path, archiveEntry) => ipcRenderer.invoke('file:readMeta', path, archiveEntry),
   statPath: (path) => ipcRenderer.invoke('fs:stat', path),
   getPathForFile: (file) => webUtils.getPathForFile(file),
   fileUrl: (path) => toFileUrl(path),
+  imageSourceUrl: (path, opts) => toImageSourceUrl(path, opts),
   getConfig: () => ipcRenderer.invoke('config:get'),
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
   removeRecentFolder: (path) => ipcRenderer.invoke('config:removeRecentFolder', path),

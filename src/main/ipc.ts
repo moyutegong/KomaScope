@@ -7,6 +7,12 @@ import { stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 import { readImageMeta, scanFolder } from './file-service'
 import { readArchiveEntry, scanArchive } from './zip-source'
+import {
+  IMAGE_SOURCE_PROTOCOL,
+  parseImageSourceParams,
+  readImageSourceMeta,
+  renderImageSource
+} from './image-source'
 import { configStore } from './config-store'
 import { buildAppMenu } from './menu'
 import { rebuildMainWindow } from './window-manager'
@@ -62,6 +68,10 @@ export function registerFileSchemePrivilege(): void {
     {
       scheme: FILE_PROTOCOL,
       privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, stream: true }
+    },
+    {
+      scheme: IMAGE_SOURCE_PROTOCOL,
+      privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, stream: true }
     }
   ])
 }
@@ -77,6 +87,35 @@ export function registerFileProtocol(): void {
     const headers = new Headers(res.headers)
     headers.set('Access-Control-Allow-Origin', '*')
     return new Response(res.body, { status: res.status, statusText: res.statusText, headers })
+  })
+
+  // 统一图片源协议(sharp 流式缩放):缩略图与大图分层服务(§性能)
+  protocol.handle(IMAGE_SOURCE_PROTOCOL, async (request) => {
+    const url = new URL(request.url)
+    const params = parseImageSourceParams(url)
+    if (!params) {
+      return new Response('Bad Request', { status: 400 })
+    }
+    // ETag 协商缓存:同一图片同一宽度重复请求返回 304
+    const etagHint = request.headers.get('if-none-match')
+    try {
+      const { body, etag } = await renderImageSource(params)
+      if (etagHint === etag) {
+        return new Response(null, { status: 304 })
+      }
+      return new Response(new Uint8Array(body), {
+        status: 200,
+        headers: {
+          'Content-Type': 'image/jpeg',
+          'Cache-Control': 'public, max-age=3600',
+          ETag: etag,
+          'Access-Control-Allow-Origin': '*'
+        }
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      return new Response(message, { status: 404 })
+    }
   })
 }
 
@@ -151,9 +190,13 @@ export function registerIpc(): void {
     return readArchiveEntry(archivePath, entryName)
   })
 
-  // --- 图片元数据(头部解析,不解码全图) ---
-  ipcMain.handle('file:readMeta', async (_event, path: unknown) => {
+  // --- 图片元数据(头部解析,不解码全图;§格式:头部失败回退 sharp) ---
+  ipcMain.handle('file:readMeta', async (_event, path: unknown, archiveEntry: unknown) => {
     if (!isNonEmptyString(path)) throw new Error('file:readMeta 需要非空路径')
+    // 压缩包源:sharp 解压条目后读元数据(头部解析无法随机读压缩流)
+    if (isNonEmptyString(archiveEntry)) {
+      return readImageSourceMeta({ path, archiveEntry })
+    }
     return readImageMeta(path)
   })
 

@@ -15,7 +15,13 @@ import {
 import type { Point, Size, ViewTransform } from '../../shared/transform-model'
 import { TileCache } from '../../shared/tile-cache'
 import { TILE_SIZE, tileOrigin } from '../../shared/tile-grid'
-import { mimeFromName } from '../../shared/mime'
+import { mimeFromName, isNativelyDecodable } from '../../shared/mime'
+import {
+  PREVIEW_WIDTH,
+  computeNativeView,
+  nativeNeedsRefetch
+} from '../../shared/native-view'
+import type { NativeViewSpec } from '../../shared/native-view'
 import { t } from '../i18n'
 import type { ImageRenderer } from './image-renderer'
 import type { StatusBar } from '../ui/statusbar'
@@ -66,6 +72,25 @@ export class ViewerController {
   private fullBitmapGen = 0
   private tiledFromFull = false
   private tiled = false
+  /** 原生图源模式(§性能/§格式):超高清图或 Chromium 不可解码格式,
+   * 由主进程 sharp 按视口区域流式渲染,内存与图片尺寸解耦 */
+  private native = false
+  /** 当前已加载的区域位图与其对应区域 */
+  private nativeBitmap: ImageBitmap | null = null
+  private nativeRegion: { x: number; y: number; width: number; height: number } | null = null
+  /** 当前位图是否为低清预览(预览阶段不参与重取判定,由自动升级接管) */
+  private nativePreview = false
+  /** 原生区域请求代际:翻页/换源时自增,响应到达时校验并丢弃过期请求 */
+  private nativeSeq = 0
+  /** 请求序号:每次请求自增,仅用于"在途去重"判定(与代际分离,
+   * 避免 preview 升级请求被 preview 自身的 finally 误清在途标志) */
+  private nativeReqSeq = 0
+  /** 在途区域请求(去重:同一时刻只保留一个在途请求) */
+  private nativeInFlight = false
+  /** 区域重取防抖(缩放交互期间合并,避免每帧请求) */
+  private nativeRefetchTimer: ReturnType<typeof setTimeout> | null = null
+  /** 慢图解码提示计时器(>800ms 未完成时状态栏提示) */
+  private slowDecodeTimer: ReturnType<typeof setTimeout> | null = null
   /** 已知解码失败的瓦片坐标(避免失败后每次重绘都重新解码 → CPU 自旋) */
   private failedTiles = new Set<string>()
   /** 在途瓦片解码 Promise(同坐标去重,避免重复解码覆盖位图不 close) */
@@ -175,7 +200,7 @@ export class ViewerController {
       this.layoutMode = 'single'
       void window.komascope.setConfig({ layoutMode: this.layoutMode })
     }
-    if (this.bitmap || this.tiled) this.applyFit()
+    if (this.bitmap || this.tiled || this.native) this.applyFit()
   }
 
   /** 切换阅读布局(§13 P1 双页跨页) */
@@ -183,7 +208,7 @@ export class ViewerController {
     this.layoutMode = this.layoutMode === 'single' ? 'spread' : 'single'
     void window.komascope.setConfig({ layoutMode: this.layoutMode })
     // 重新加载当前页以应用布局
-    if (this.bitmap || this.tiled) void this.loadPage(this.currentIndex)
+    if (this.bitmap || this.tiled || this.native) void this.loadPage(this.currentIndex)
   }
 
   get isSpread(): boolean {
@@ -274,7 +299,7 @@ export class ViewerController {
 
   /** 锚点缩放(滚轮/+/−):锁定状态下拒绝写入(FR-7 ②) */
   zoomAt(anchor: Point, factor: number): void {
-    if (this.locked || (!this.bitmap && !this.tiled) || factor <= 0) return
+    if (this.locked || (!this.bitmap && !this.tiled && !this.native) || factor <= 0) return
     if (this.fitMode !== 'custom') {
       this.fitMode = 'custom'
     }
@@ -286,8 +311,10 @@ export class ViewerController {
 
   /** 平移(拖拽):锁定不影响平移 */
   translateBy(dx: number, dy: number): void {
-    if (!this.bitmap && !this.tiled) return
+    if (!this.bitmap && !this.tiled && !this.native) return
     this.transform = translate(this.transform, dx, dy)
+    // 原生图源:平移超出预留边距时重取区域
+    this.scheduleNativeRefetch()
     this.render()
   }
 
@@ -295,7 +322,7 @@ export class ViewerController {
   setFitMode(mode: FitMode): void {
     if (mode === 'custom') {
       const scale = this.lastCustomScale ?? 1
-      if (this.bitmap || this.tiled) {
+      if (this.bitmap || this.tiled || this.native) {
         const center: Point = {
           x: this.renderer.viewportSize.width / 2,
           y: this.renderer.viewportSize.height / 2
@@ -319,7 +346,7 @@ export class ViewerController {
   /** 应用适配模式并重绘(翻页后 / 窗口 resize 时自动调用) */
   applyFit(mode: FitMode = this.fitMode): void {
     this.fitMode = mode
-    if ((!this.bitmap && !this.tiled) || this.imageSize.width <= 0 || this.imageSize.height <= 0) return
+    if ((!this.bitmap && !this.tiled && !this.native) || this.imageSize.width <= 0 || this.imageSize.height <= 0) return
     if (mode === 'custom') {
       // custom:保留当前倍率,仅重新居中(翻页后保留缩放,FR-6)
       this.transform = centerTransform(this.transform.scale, this.renderer.viewportSize, this.displaySize)
@@ -332,12 +359,14 @@ export class ViewerController {
       )
     }
     this.statusbar.setZoom(this.transform.scale)
+    // 原生图源:适配/窗口尺寸变化后按需重取区域(视口变化影响目标分辨率)
+    this.scheduleNativeRefetch()
     this.render()
   }
 
   /** 视口尺寸变化(窗口 resize / 全屏切换):按适配模式重算 */
   onViewportResize(): void {
-    if (this.bitmap || this.tiled) this.applyFit()
+    if (this.bitmap || this.tiled || this.native) this.applyFit()
   }
 
   /** 变换变更后统一收尾:状态栏同步 + 持久化(防抖)+ 重绘 */
@@ -348,6 +377,8 @@ export class ViewerController {
       this.persistTimer = null
       void window.komascope.setConfig({ fitMode: this.fitMode, scale: this.transform.scale })
     }, PERSIST_DEBOUNCE_MS)
+    // 原生图源:缩放后按需重取更高分辨率区域(防抖合并交互)
+    this.scheduleNativeRefetch()
     this.render()
   }
 
@@ -391,16 +422,55 @@ export class ViewerController {
     return page ? this.pageCacheKey(page) : null
   }
 
+  /**
+   * 确保页面元数据可用(§格式):压缩包源 scanArchive 不解析尺寸,
+   * 首次打开该页时读一次并缓存到 pages(原生判定与状态栏都需要)。
+   */
+  private async ensurePageMeta(index: number): Promise<PageItem> {
+    const page = this.pages[index]
+    if (page.width > 0 && page.height > 0) return page
+    try {
+      const meta = await window.komascope.readMeta(page.path, page.archiveEntry)
+      if (meta.width > 0 && meta.height > 0) {
+        const updated = { ...page, width: meta.width, height: meta.height }
+        this.pages[index] = updated
+        return updated
+      }
+    } catch {
+      // 读取失败保持原值(0 由后续解码兜底)
+    }
+    return page
+  }
+
   private async loadPage(index: number): Promise<void> {
     if (index < 0 || index >= this.pages.length) return
     const seq = ++this.loadSeq
     this.currentIndex = index
-    const page = this.pages[index]
+    // 原生状态属于上一页:进入新页前清理(位图/计时器/代际)
+    this.releaseNative()
+    const page = await this.ensurePageMeta(index)
+    if (seq !== this.loadSeq) return
     this.statusbar.setPage(index, this.pages.length)
     this.statusbar.setImageSize(page.width, page.height)
     this.callbacks.onPagesChanged?.(this.pages, index)
     // 书签(§13 P1):记录当前页码(防抖落盘由 ConfigStore 处理)
     void window.komascope.setConfig({ lastPage: index })
+
+    // 原生图源模式(§性能/§格式):以下两类交主进程 sharp 按视口区域流式渲染,
+    // 内存与图片原始尺寸解耦,突破 8192 纹理上限与整页解码像素上限——
+    // ① Chromium 不可解码格式(TIFF/SVG/HEIC/JXL/JP2);
+    // ② 超大非 JPEG(瓦片模式需整页解码一次,会 OOM 或被像素上限拒绝)。
+    // 该路径不读取整页字节(压缩包源省一次解压),故置于 blob 获取之前。
+    // 双页布局不适用区域渲染 → 强制切回单页。
+    if (this.needsNative(page)) {
+      if (this.layoutMode === 'spread') {
+        this.layoutMode = 'single'
+        void window.komascope.setConfig({ layoutMode: this.layoutMode })
+      }
+      this.enterNativeMode(page, { width: page.width, height: page.height })
+      return
+    }
+
     try {
       const blob = await this.getPageBlob(page)
       if (seq !== this.loadSeq) return
@@ -434,7 +504,7 @@ export class ViewerController {
         }
       }
 
-      // 瓦片模式:仅单页布局且超阈值 → 不整页解码,按需切瓦片
+      // 瓦片模式:仅单页布局且超阈值(JPEG)→ 不整页解码,按需切瓦片
       if (
         this.layoutMode !== 'spread' &&
         (page.width > TILED_THRESHOLD || page.height > TILED_THRESHOLD)
@@ -470,6 +540,7 @@ export class ViewerController {
         return
       }
       this.tiled = false
+      this.native = false
       this.pageBlob = null
       this.releaseFullBitmap()
       this.bitmap?.close()
@@ -495,10 +566,11 @@ export class ViewerController {
       } else {
         this.applyFit()
       }
-      // 预解码相邻页(NFR-2;双页布局跳过已加载的右页)
-      const nextIndex = this.layoutMode === 'spread' ? index + 2 : index + 1
-      this.predecode(nextIndex)
-      if (this.pages[nextIndex] === undefined && index > 0) this.predecode(index - 1)
+      // 预解码相邻页(NFR-2;§性能增强:后 2 页,前 1 页;双页布局按 2 步)
+      const step = this.layoutMode === 'spread' ? 2 : 1
+      this.predecode(index + step)
+      this.predecode(index + step * 2)
+      if (index > 0) this.predecode(index - step)
     } catch (err) {
       console.error(t('error.loadPage'), page.path, err)
       this.showEmpty()
@@ -536,7 +608,157 @@ export class ViewerController {
     this.showEmpty()
   }
 
-  /** 进入瓦片模式(§4.4):保留 blob,按需解码可见瓦片 */
+  /** 尺寸是否需走原生图源:超大非 JPEG(瓦片模式需整页解码会 OOM) */
+  private needsNative(page: PageItem): boolean {
+    if (!isNativelyDecodable(page.name)) return true
+    // JPEG 走瓦片(Chromium 部分解码);非 JPEG 超阈值 → 原生区域渲染
+    const isJpeg = mimeFromName(page.name) === 'image/jpeg'
+    if (isJpeg) return false
+    return page.width > TILED_THRESHOLD || page.height > TILED_THRESHOLD
+  }
+
+  /** 进入原生图源模式(§性能/§格式):sharp 按视口区域流式渲染 */
+  private enterNativeMode(page: PageItem, imageSize: Size): void {
+    this.tiled = false
+    this.native = true
+    this.pageBlob = null
+    this.releaseFullBitmap()
+    this.bitmap?.close()
+    this.bitmap = null
+    this.rightBitmap?.close()
+    this.rightBitmap = null
+    this.imageSize = imageSize
+    this.statusbar.setImageSize(imageSize.width, imageSize.height)
+    this.renderer.setVisible(true)
+    this.nativeRegion = null
+    this.nativeBitmap?.close()
+    this.nativeBitmap = null
+    // 先出一张低清预览(整图缩略)再升级到视口分辨率:进入大图几乎即时可见
+    void this.requestNativeRegion(page, true)
+    this.applyFit()
+  }
+
+  /**
+   * 请求视口区域位图(§性能/§格式):
+   * - preview=true 请求整图低清预览(快速可见);否则请求当前视口区域全分辨率;
+   * - 结果经代际校验,丢弃翻页/变换变化后的过期响应;
+   * - 解码超过 800ms 时状态栏提示"解码中…"。
+   */
+  private async requestNativeRegion(page: PageItem, preview = false): Promise<void> {
+    const seq = this.nativeSeq
+    const req = ++this.nativeReqSeq
+    // 元数据未知(width/height 为 0)时退回整图预览(不传 region)
+    const knownSize = this.imageSize.width > 0 && this.imageSize.height > 0
+    const spec: NativeViewSpec | null = preview
+      ? knownSize
+        ? {
+            region: { x: 0, y: 0, width: this.imageSize.width, height: this.imageSize.height },
+            targetWidth: PREVIEW_WIDTH
+          }
+        : { region: { x: 0, y: 0, width: 1, height: 1 }, targetWidth: PREVIEW_WIDTH }
+      : computeNativeView(
+          this.renderer.viewportSize,
+          this.imageSize,
+          this.transform,
+          this.renderer.devicePixelRatio
+        )
+    if (!spec) return
+    // 尺寸未知:整图请求(不传 region),由 sharp 自行决定
+    const useRegion = preview ? knownSize : true
+    this.nativeInFlight = true
+    this.startSlowDecodeHint()
+    try {
+      const url = window.komascope.imageSourceUrl(page.path, {
+        width: spec.targetWidth,
+        archiveEntry: page.archiveEntry,
+        region: useRegion ? spec.region : undefined
+      })
+      const res = await fetch(url)
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const bitmap = await createImageBitmap(blob)
+      // 代际校验:翻页或退出原生模式时丢弃(关闭位图避免泄漏)
+      if (seq !== this.nativeSeq || !this.native) {
+        bitmap.close()
+        return
+      }
+      this.nativeBitmap?.close()
+      this.nativeBitmap = bitmap
+      this.nativePreview = preview
+      // 整图请求(尺寸未知)时,区域即为整张图的实际尺寸
+      this.nativeRegion = useRegion
+        ? spec.region
+        : { x: 0, y: 0, width: bitmap.width, height: bitmap.height }
+      this.render()
+      // 预览完成后自动升级到视口分辨率
+      if (preview) void this.requestNativeRegion(page)
+    } catch (err) {
+      console.error(t('error.loadPage'), page.path, err)
+    } finally {
+      // 仅最新一次请求清除在途标志:preview 的 finally 不得清掉
+      // 它自己触发的升级请求(否则重取判定会在升级在途时误判为空闲)
+      if (req === this.nativeReqSeq) {
+        this.nativeInFlight = false
+        this.clearSlowDecodeHint()
+      }
+    }
+  }
+
+  /** 慢图解码提示:>800ms 未完成时状态栏提示"解码中…" */
+  private startSlowDecodeHint(): void {
+    this.clearSlowDecodeHint()
+    this.slowDecodeTimer = setTimeout(() => {
+      this.slowDecodeTimer = null
+      this.statusbar.setBusy(true)
+    }, 800)
+  }
+
+  private clearSlowDecodeHint(): void {
+    if (this.slowDecodeTimer !== null) {
+      clearTimeout(this.slowDecodeTimer)
+      this.slowDecodeTimer = null
+    }
+    this.statusbar.setBusy(false)
+  }
+
+  /** 变换变化后按需重取区域(防抖合并缩放交互;预览位图不参与清晰度判定) */
+  private scheduleNativeRefetch(): void {
+    if (!this.native) return
+    if (this.nativeRefetchTimer !== null) clearTimeout(this.nativeRefetchTimer)
+    this.nativeRefetchTimer = setTimeout(() => {
+      this.nativeRefetchTimer = null
+      if (!this.native) return
+      const page = this.currentPage
+      if (!page) return
+      // 预览阶段不重取:低清位图必然"分辨率不足",由预览完成后的自动升级接管
+      if (!this.nativeRegion || this.nativePreview) return
+      const needs = nativeNeedsRefetch(
+        { region: this.nativeRegion, bitmapWidth: this.nativeBitmap?.width ?? 0 },
+        this.renderer.viewportSize,
+        this.imageSize,
+        this.transform,
+        this.renderer.devicePixelRatio
+      )
+      if (needs && !this.nativeInFlight) void this.requestNativeRegion(page)
+    }, 120)
+  }
+
+  /** 清理原生图源状态(翻页/换源时) */
+  private releaseNative(): void {
+    this.native = false
+    this.nativeSeq++
+    this.nativeReqSeq++
+    this.nativeInFlight = false
+    this.nativeRegion = null
+    this.nativePreview = false
+    this.nativeBitmap?.close()
+    this.nativeBitmap = null
+    if (this.nativeRefetchTimer !== null) {
+      clearTimeout(this.nativeRefetchTimer)
+      this.nativeRefetchTimer = null
+    }
+    this.clearSlowDecodeHint()
+  }
   private enterTiledMode(blob: Blob, imageSize: Size): void {
     const page = this.pages[this.currentIndex]
     this.tiledFromFull = page ? mimeFromName(page.name) !== 'image/jpeg' : true
@@ -546,6 +768,7 @@ export class ViewerController {
       return
     }
     this.tiled = true
+    this.native = false
     this.pageBlob = blob
     this.releaseFullBitmap()
     this.bitmap?.close()
@@ -599,12 +822,14 @@ export class ViewerController {
   /**
    * 预解码相邻页整页并存入 LRU(NFR-2 ≤200ms;NFR-4 上限 8 页)。
    * 串行执行,避免瞬间并发解码过多(§12 解码并发上限)。
-   * 超大图(瓦片模式)跳过:整页解码数百 MB,翻页时按需解码瓦片。
+   * 超大图(瓦片模式)与原生图源页(不可解码格式/超大非 JPEG)跳过:
+   * 前者整页解码数百 MB,后者 Chromium 无法解码,均在翻页时按需处理。
    */
   private predecode(index: number): void {
     if (index < 0 || index >= this.pages.length) return
     const page = this.pages[index]
     if (page.width > TILED_THRESHOLD || page.height > TILED_THRESHOLD) return
+    if (this.needsNative(page)) return
     const key = this.pageCacheKey(page)
     if (this.tileCache.hasPage(key)) return
     this.decodeQueue = this.decodeQueue.then(async () => {
@@ -683,7 +908,10 @@ export class ViewerController {
   /** 实际绘制(一帧一次;瓦片模式缺块时内部会发起异步解码并请求后续重绘) */
   private paint(): void {
     const pagePath = this.currentPagePath
-    if (this.tiled && this.pageBlob && pagePath) {
+    if (this.native && this.nativeBitmap && this.nativeRegion) {
+      // 原生图源:绘制当前区域位图(按区域在图片中的位置映射到屏幕)
+      this.renderer.renderRegion(this.transform, this.nativeBitmap, this.nativeRegion)
+    } else if (this.tiled && this.pageBlob && pagePath) {
       this.renderer.renderTiled(this.transform, this.imageSize, {
         getTile: (tx, ty) => {
           const key = `${tx}:${ty}`
@@ -712,6 +940,7 @@ export class ViewerController {
   }
 
   private showEmpty(): void {
+    this.releaseNative()
     this.releaseFullBitmap()
     this.pageBlob = null
     this.renderer.clear()

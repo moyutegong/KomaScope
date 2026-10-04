@@ -11,6 +11,11 @@ files:
   - out/**
   - package.json
 
+# sharp(libvips)含原生二进制,必须从 asar 解包才能被 require
+asarUnpack:
+  - node_modules/sharp/**
+  - node_modules/@img/**
+
 # 窗口图标随包分发:主进程从 process.resourcesPath 读取
 extraResources:
   - from: resources/window-icon.png

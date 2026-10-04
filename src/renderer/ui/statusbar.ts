@@ -9,6 +9,7 @@ export class StatusBar {
   private readonly sizeEl: HTMLElement
   private readonly zoomEl: HTMLElement
   private readonly lockEl: HTMLElement
+  private readonly busyEl: HTMLElement
   private page = { current: 0, total: 0 }
   private size = { width: 0, height: 0 }
   private zoom = 0
@@ -18,6 +19,7 @@ export class StatusBar {
     this.sizeEl = document.getElementById('status-size') as HTMLElement
     this.zoomEl = document.getElementById('status-zoom') as HTMLElement
     this.lockEl = document.getElementById('status-lock') as HTMLElement
+    this.busyEl = document.getElementById('status-busy') as HTMLElement
   }
 
   setPage(current: number, total: number): void {
@@ -39,11 +41,17 @@ export class StatusBar {
     this.lockEl.hidden = !locked
   }
 
+  /** 慢图解码提示(§性能):大图解码 >800ms 时显示,完成/失败后清除 */
+  setBusy(busy: boolean): void {
+    this.busyEl.hidden = !busy
+  }
+
   /** 语言切换后刷新文案 */
   refresh(): void {
     this.renderPage()
     this.renderSize()
     this.renderZoom()
+    this.busyEl.textContent = t('status.busy')
   }
 
   private renderPage(): void {
