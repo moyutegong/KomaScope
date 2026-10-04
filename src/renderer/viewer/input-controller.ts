@@ -77,6 +77,8 @@ export class InputController {
           }
           return
         }
+        // 浏览视图内:放行原生滚动(缩略图网格),不缩放/不翻页
+        if (e.target instanceof Element && e.target.closest('#browser') !== null) return
         e.preventDefault()
         // 光标在侧栏内:滚轮翻页(不缩放);否则锚点缩放
         const overSidebar = e.target instanceof Element && e.target.closest('#sidebar') !== null

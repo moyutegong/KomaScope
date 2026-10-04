@@ -117,13 +117,15 @@
 
 | 通道 | 方向 | 说明 |
 | --- | --- | --- |
-| `folder:open` | R→M | 打开系统目录选择器,返回图片文件列表(自然排序) |
-| `folder:scan` | R→M | 扫描指定目录,返回 `{ path, name, width, height, size }[]` |
+| `folder:pick` | R→M | 打开系统目录选择器,仅返回所选路径(不扫描内容:书库/大目录秒开) |
+| `folder:list` | R→M | 列举目录**当前层**:子文件夹 + 压缩包 + 图片(自然排序,不递归、不预读元数据) |
 | `archive:scan` / `archive:read` | R→M | 扫描 zip/cbz 条目列表 / 读取单条目字节(§13 P0) |
 | `file:readMeta` | R→M | 读取单张图片尺寸(头部解析;失败回退 sharp metadata;支持压缩包条目) |
 | `komascope-file://` 协议 | R→M | 渲染进程 `fetch` 流式读取本地图片字节(4.2) |
-| `komascope-thumb://` 协议 | R→M | **sharp 原生图源**:`?w=` 缩略图 / `?x=&y=&rw=&rh=` 区域裁剪,返回渐进 JPEG(带 ETag 协商缓存) |
+| `komascope-thumb://` 协议 | R→M | **sharp 原生图源**:`?w=` 缩略图 / `?x=&y=&rw=&rh=` 区域裁剪,返回渐进 JPEG(带 ETag 协商缓存 + 主进程磁盘缓存) |
 | `config:get` / `config:set` | R→M | 配置读写,主进程落盘 |
+| `config:addRecentFolder` / `config:removeRecentFolder` | R→M | 最近打开历史的原子去重置顶 / 删除(避免渲染侧读改写竞态) |
+| `config:setBookmark` | R→M | 原子写入一个文件夹书签(每个文件夹各自独立),返回更新后的书签表 |
 | `window:getInfo` | R→M | 获取 `{ bounds, workArea, dpr, screenId }` |
 | `window:setBounds` | R→M | 设置窗口位置/大小(拖拽窗口结束、适应屏幕时调用) |
 | `window:toggleFullscreen` | R→M | 全屏切换 |
@@ -200,11 +202,23 @@ custom     : 用户缩放,记录百分比,翻页后保留
   "scaleLocked": false,             // 缩放锁定状态
   "uiScale": 1.0,                   // UI 缩放系数
   "theme": "dark",
-  "wheelAction": "zoom"             // zoom | page(滚轮动作)
+  "wheelAction": "zoom",            // zoom | page(滚轮动作)
+  "libraryRoot": "F:\\Comics",      // 书库根目录:自动列出其下一级文件夹作为书架
+  "bookmarks": {                    // 每个文件夹各自独立的阅读书签(key = 文件夹绝对路径)
+    "F:\\Comics\\OnePiece": {
+      "folderPath": "F:\\Comics\\OnePiece",
+      "lastImagePath": "F:\\Comics\\OnePiece\\012.jpg",
+      "lastIndex": 11,              // 上次浏览图片在列表中的下标
+      "pageCount": 240,             // 记录时的图片总数(书架进度显示,免重新扫描)
+      "updatedAt": 1737000000000    // 更新时间戳,书架“最近阅读”倒序
+    }
+  }
 }
 ```
 
 写盘节流:配置变更 500ms 防抖后落盘;窗口移动/缩放结束(resize/move 停止)时记录几何。
+书签由 `config:setBookmark` 在主进程内原子读改写(避免渲染侧读改写竞态),上限 500 条、超出按 `updatedAt` 保留最新;
+`komascope-thumb://` 缩略图结果另存于 `userData/thumb-cache`(键含源文件 mtime + 字节数,上限 2000 条按 mtime 淘汰)。
 
 ---
 
@@ -227,8 +241,18 @@ custom     : 用户缩放,记录百分比,翻页后保留
 | `L` | 切换缩放锁定(状态栏图标同步) |
 | `R` | 重置视图(居中 + fitScreen) |
 | `F` / `F11` | OS 全屏切换 |
-| `Esc` | 退出沉浸 / 全屏 |
+| `Esc` | 退出沉浸 / 全屏;两者都不是时返回缩略图浏览视图 |
 | 沉浸按钮 | 切换非全屏无边框模式(沉浸);退出时重建有边框窗口以便访问系统菜单 |
+| 打开文件夹 / 书库目录按钮 | 选择目录后进入**缩略图浏览视图**(仅取路径不扫描;书库目录会持久化并作为书架根) |
+| 浏览视图:单击文件夹 | 进入下一级(面包屑逐级可跳,`Backspace` 返回上级) |
+| 浏览视图:单击图片缩略图 | 以该层图片列表进入阅读模式,从所点图片开始 |
+| 浏览视图:方向键 / `Home` / `End` / `PageUp` / `PageDown` | 移动选中项(按网格列数跨行移动) |
+| 浏览视图:`Enter` | 打开选中项(文件夹进入下一级;压缩包 / 图片进入阅读) |
+| 浏览视图:"继续阅读" | 按该文件夹书签位置直接续读(仅在书库根目录显示,按最近阅读倒序) |
+| 再次进入有书签的文件夹 | 自动从该书签续读,状态栏提示"已从上次位置继续 (当前/总数)" |
+| 浏览视图:「阅读本文件夹」 | 从第 1 张开始阅读当前层全部图片(当前层有图片时才显示) |
+| 工具栏「返回书库」按钮 | 结束当前阅读并回到书库根目录的缩略图浏览视图,由用户重新选择文件夹(未设置书库时进入选择流程) |
+| 侧栏页面列表 | 仅显示文件名(缩略图浏览由浏览视图承担);点击跳转到该页,列表跟随当前页滚动 |
 | 侧栏分隔条 | 拖拽调整历史 / 图片区块占比(15%–85%) |
 | 工具栏空白区 | 拖动无边框窗口位置(自绘最小化/最大化/关闭按钮) |
 
@@ -261,6 +285,7 @@ KomaScope/
 │   │   ├── file-service.ts       # 目录扫描、自然排序、图片元数据(sharp 兜底)
 │   │   ├── zip-source.ts         # zip/cbz 压缩包源(fflate 流式读取)
 │   │   ├── image-source.ts       # sharp 原生图源:缩略图 / 视口区域流式渲染
+│   │   ├── thumb-cache.ts        # 缩略图磁盘缓存(指纹键 + mtime 淘汰)
 │   │   ├── config-store.ts       # 配置读写(防抖落盘)
 │   │   ├── menu.ts               # 应用菜单
 │   │   └── ipc.ts                # IPC 路由与参数校验 + 自定义协议
@@ -289,7 +314,9 @@ KomaScope/
 │       └── ui/
 │           ├── toolbar.ts
 │           ├── statusbar.ts
-│           ├── sidebar.ts             # 历史 + 缩略图网格
+│           ├── sidebar.ts             # 历史 + 文件名列表
+│           ├── browser.ts             # 缩略图浏览视图(资源管理器式层级)
+│           ├── browser-model.ts       # 浏览视图纯逻辑(条目/书签/选中移动)
 │           └── long-view.ts           # 长图模式
 └── tests/                        # vitest 单元测试
 ```

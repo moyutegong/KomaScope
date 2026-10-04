@@ -19,6 +19,11 @@ Thumbs.db
 # Reasonix 本地会话元数据
 .reasonix/
 
+# 本地重构计划文档(不入库)
+REFACTOR_PLAN.local.md
+
 # 测试图片素材(不入库)
 testImg/
+# 真实超大图测试素材(用户提供,不入库)
+test-img/
 dist-smoke/

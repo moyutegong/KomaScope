@@ -12,6 +12,7 @@ const MENU_TEXT: Record<Locale, Record<string, string>> = {
   zh: {
     file: '文件(&F)',
     openFolder: '打开文件夹(&O)',
+    openLibrary: '打开书库目录(&L)',
     openArchive: '打开压缩包(&A)',
     quit: '退出(&Q)',
     edit: '编辑(&E)',
@@ -31,6 +32,7 @@ const MENU_TEXT: Record<Locale, Record<string, string>> = {
     fitScreen: '适应屏幕',
     actualSize: '实际大小',
     resetView: '重置视图',
+    browseMode: '缩略图浏览',
     spreadMode: '双页跨页',
     rotateCw: '旋转 90°',
     flipH: '水平镜像',
@@ -48,6 +50,7 @@ const MENU_TEXT: Record<Locale, Record<string, string>> = {
   en: {
     file: 'File',
     openFolder: 'Open Folder',
+    openLibrary: 'Open Library Folder…',
     openArchive: 'Open Archive…',
     quit: 'Quit',
     edit: 'Edit',
@@ -67,6 +70,7 @@ const MENU_TEXT: Record<Locale, Record<string, string>> = {
     fitScreen: 'Fit Screen',
     actualSize: 'Actual Size',
     resetView: 'Reset View',
+    browseMode: 'Thumbnail Browser',
     spreadMode: 'Two-Page Spread',
     rotateCw: 'Rotate 90°',
     flipH: 'Flip Horizontal',
@@ -113,6 +117,12 @@ export function buildAppMenu(locale: Locale, win: BrowserWindow): void {
           click: () => sendAction(win, 'open-folder')
         },
         {
+          // 书库根目录(§观看历史):选择一个大目录,自动列出其下一级文件夹
+          label: t('openLibrary'),
+          accelerator: 'CmdOrCtrl+L',
+          click: () => sendAction(win, 'open-library')
+        },
+        {
           label: t('openArchive'),
           accelerator: 'CmdOrCtrl+Shift+O',
           click: () => sendAction(win, 'open-archive')
@@ -147,6 +157,12 @@ export function buildAppMenu(locale: Locale, win: BrowserWindow): void {
         { label: t('fitScreen'), accelerator: '0', click: () => sendAction(win, 'fit-screen') },
         { label: t('actualSize'), accelerator: '1', click: () => sendAction(win, 'actual-size') },
         { label: t('resetView'), accelerator: 'R', click: () => sendAction(win, 'reset-view') },
+        {
+          // 缩略图浏览视图(§资源管理器模式):与工具栏"缩略图浏览"按钮等价
+          label: t('browseMode'),
+          accelerator: 'CmdOrCtrl+B',
+          click: () => sendAction(win, 'toggle-browse')
+        },
         {
           label: t('spreadMode'),
           type: 'checkbox',

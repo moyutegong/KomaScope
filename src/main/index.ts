@@ -3,15 +3,19 @@
  * 安全基线(contextIsolation/nodeIntegration/sandbox)在 window-manager.ts 中设置。
  */
 import { app, BrowserWindow } from 'electron'
+import { join } from 'node:path'
 import { registerFileProtocol, registerFileSchemePrivilege, registerIpc } from './ipc'
 import { buildAppMenu } from './menu'
 import { createMainWindow, isRebuildingWindow } from './window-manager'
 import { configStore } from './config-store'
+import { setThumbCacheDir } from './thumb-cache'
 
 // 必须在 app ready 之前声明协议特权,否则渲染进程 fetch 自定义协议会失败
 registerFileSchemePrivilege()
 
 app.whenReady().then(() => {
+  // 缩略图磁盘缓存(§性能):自定义协议响应不进 Chromium 磁盘缓存,由主进程自管
+  setThumbCacheDir(join(app.getPath('userData'), 'thumb-cache'))
   registerFileProtocol()
   registerIpc()
   const win = createMainWindow()

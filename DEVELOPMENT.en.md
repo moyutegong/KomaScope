@@ -117,11 +117,12 @@ A lightweight open-source desktop comic reader whose core optimization target is
 
 | Channel | Direction | Description |
 | --- | --- | --- |
-| `folder:open` | R→M | Opens the system directory picker; returns the image file list (natural sort) |
-| `folder:scan` | R→M | Scans a given directory; returns `{ path, name, width, height, size }[]` |
+| `folder:pick` | R→M | Opens the system directory picker; returns the chosen path only (no scan: large libraries open instantly) |
+| `folder:list` | R→M | Lists one directory level: subfolders + archives + images (natural sort, no recursion, no metadata pre-read) |
 | `file:readMeta` | R→M | Reads a single image's dimensions (header-only, no full decode) |
 | `file:stream` | R→M | Streams image bytes by page index: main process `net.handleFileOpen` returns a Web Stream; the renderer decodes incrementally |
 | `config:get` / `config:set` | R→M | Config read/write; persisted to disk by the main process |
+| `config:setBookmark` | R→M | Atomically writes one folder bookmark (each folder keeps its own), returns the updated bookmark map |
 | `window:getInfo` | R→M | Gets `{ bounds, workArea, dpr, screenId }` |
 | `window:setBounds` | R→M | Sets window position/size (called after window drag ends or on Fit Screen) |
 | `window:toggleFullscreen` | R→M | Fullscreen toggle |
@@ -188,11 +189,23 @@ custom     : user zoom, percentage recorded, kept across page turns
   "scaleLocked": false,             // zoom lock state
   "uiScale": 1.0,                   // UI scale factor
   "theme": "dark",
-  "wheelAction": "zoom"             // zoom | page (wheel action)
+  "wheelAction": "zoom",            // zoom | page (wheel action)
+  "libraryRoot": "F:\\Comics",      // library root: its direct children become the bookshelf
+  "bookmarks": {                    // per-folder bookmarks (key = absolute folder path)
+    "F:\\Comics\\OnePiece": {
+      "folderPath": "F:\\Comics\\OnePiece",
+      "lastImagePath": "F:\\Comics\\OnePiece\\012.jpg",
+      "lastIndex": 11,              // index of the last viewed image
+      "pageCount": 240,             // image count when recorded (shelf progress, no rescan)
+      "updatedAt": 1737000000000    // timestamp, "recently read" ordering on the shelf
+    }
+  }
 }
 ```
 
 Write throttling: config changes debounced 500ms before persisting; window geometry recorded when move/resize settles.
+Bookmarks are written atomically inside the main process via `config:setBookmark` (no read-modify-write races); capped at 500 entries, pruned by `updatedAt`.
+Thumbnails produced by `komascope-thumb://` are also cached on disk under `userData/thumb-cache` (key includes source mtime + size; capped at 2000 entries, evicted by mtime).
 
 ---
 
@@ -215,8 +228,18 @@ Write throttling: config changes debounced 500ms before persisting; window geome
 | `L` | Toggle zoom lock (status bar icon syncs) |
 | `R` | Reset view (center + Fit Screen) |
 | `F` / `F11` | OS fullscreen toggle |
-| `Esc` | Exit immersive / fullscreen |
+| `Esc` | Exit immersive / fullscreen; otherwise return to the thumbnail browser view |
 | Immersive button | Toggle non-fullscreen frameless mode; exiting rebuilds a framed window so the system menu is accessible |
+| Open Folder / Library Folder button | Enter the **thumbnail browser view** (path only, no scan; the library folder is persisted as the shelf root) |
+| Browser view: click a folder | Descend one level (breadcrumbs are clickable, `Backspace` goes up) |
+| Browser view: click a thumbnail | Enter reading mode with the current level's image list, starting at that image |
+| Browser view: arrows / `Home` / `End` / `PageUp` / `PageDown` | Move the selection (row-major, by grid column count) |
+| Browser view: `Enter` | Open the selected entry (folder → descend; archive / image → read) |
+| Browser view: "Continue reading" | Resume that folder at its bookmark (shown on the library root, most recent first) |
+| Re-entering a folder that has a bookmark | Resumes at the bookmark; the status bar flashes "Resumed from last position (current/total)" |
+| Browser view: "Read this folder" | Reads every image of the current level from the first one (shown only when the level has images) |
+| Toolbar "Back to Library" button | Ends the current reading session and returns to the library root's thumbnail browser so the user picks a folder again (opens the pick flow when no library is set) |
+| Sidebar page list | File names only (thumbnail browsing lives in the browser view); click to jump, and the list follows the current page |
 | Sidebar divider | Drag to adjust history/images split (15%–85%) |
 | Toolbar blank area | Drag the frameless window (custom min/max/close buttons) |
 

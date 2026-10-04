@@ -25,6 +25,49 @@ export interface PageItem {
   archiveEntry?: string
 }
 
+/** 目录条目(浏览视图:子文件夹 / 压缩包) */
+export interface DirectoryEntry {
+  path: string
+  name: string
+}
+
+/**
+ * folder:list 返回值(浏览视图,§资源管理器模式):
+ * 仅当前层内容,不递归;图片不预先解析尺寸(为 0),保证大目录秒开。
+ */
+export interface DirectoryListing {
+  folderPath: string
+  /** 子文件夹(自然排序) */
+  dirs: DirectoryEntry[]
+  /** 压缩包 cbz/zip(自然排序,点击直接进入阅读) */
+  archives: DirectoryEntry[]
+  /** 当前层图片(自然排序;width/height 为 0 表示待阅读时按需解析) */
+  images: PageItem[]
+}
+
+/**
+ * 文件夹书签(§观看历史):每个文件夹各自独立记录上次浏览到的图片。
+ * 存于配置书的 bookmarks 表,key 为文件夹绝对路径。
+ */
+export interface FolderBookmark {
+  /** 文件夹绝对路径(与 key 一致,便于排序/遍历) */
+  folderPath: string
+  /** 上次浏览的图片绝对路径(图片被移动/删除时回退第 0 张) */
+  lastImagePath: string
+  /** 上次浏览图片在该文件夹图片列表中的下标 */
+  lastIndex: number
+  /** 记录时的图片总数(书架进度显示用,避免重新扫描目录) */
+  pageCount: number
+  /** 更新时间戳(ms,书架"最近阅读"倒序) */
+  updatedAt: number
+}
+
+/** 书签写入载荷(updatedAt 由主进程生成) */
+export type BookmarkInput = Omit<FolderBookmark, 'updatedAt'>
+
+/** 书签表:key 为文件夹绝对路径 */
+export type BookmarkMap = Record<string, FolderBookmark>
+
 /** 应用配置(§4.5) */
 export interface AppConfig {
   windowBounds: { x: number; y: number; width: number; height: number }
@@ -50,6 +93,10 @@ export interface AppConfig {
   layoutMode: 'single' | 'spread'
   /** 最近打开的文件夹/压缩包历史(侧栏,上限 10,最新在前) */
   recentFolders: string[]
+  /** 书库根目录(§观看历史:选择一个大目录,自动列出其下一级文件夹作为书架) */
+  libraryRoot: string
+  /** 各文件夹独立的阅读书签(§观看历史,key 为文件夹绝对路径) */
+  bookmarks: BookmarkMap
   /** 非沉浸模式下侧栏/工具栏/状态栏自动隐藏(浮动唤出,§需求3) */
   autoHide: boolean
 }
@@ -83,10 +130,12 @@ export interface PathStat {
  * 渲染进程只能调用这里列出的方法(NFR-5)。
  */
 export interface KomaScopeApi {
-  openFolderDialog: () => Promise<ScanResult | null>
+  /** 选择文件夹(仅返回路径,浏览视图用:不扫描内容,大目录秒开) */
+  pickFolder: () => Promise<string | null>
+  /** 列举目录当前层内容(浏览视图:子文件夹 / 压缩包 / 图片,不递归) */
+  listDirectory: (folderPath: string) => Promise<DirectoryListing>
   /** 打开 zip/cbz 压缩包选择对话框(§13 P0) */
   openArchiveDialog: () => Promise<ScanResult | null>
-  scanFolder: (folderPath: string) => Promise<ScanResult>
   /** 扫描 zip/cbz 压缩包,返回图片条目列表(§13 P0) */
   scanArchive: (archivePath: string) => Promise<ScanResult>
   /** 按条目名读取压缩包内单张图片字节(§13 P0) */
@@ -121,6 +170,12 @@ export interface KomaScopeApi {
   removeRecentFolder: (path: string) => Promise<string[]>
   /** 原子追加最近文件夹历史(主进程内去重置顶,避免连续打开竞态),返回更新后列表 */
   addRecentFolder: (path: string) => Promise<string[]>
+  /**
+   * 写入一个文件夹书签(§观看历史):主进程内原子读改写,避免并发覆盖。
+   * 返回更新后的完整书签表(浏览视图据此刷新进度徽标/继续阅读)。
+   * 读取书签走 getConfig()(AppConfig.bookmarks),无需单独通道。
+   */
+  setBookmark: (bookmark: BookmarkInput) => Promise<BookmarkMap>
   /** 通知主进程重建应用菜单(语言切换后调用) */
   setMenuLocale: (locale: 'zh' | 'en') => Promise<void>
   /** 监听主进程菜单动作(open-folder / prev-page / zoom-in 等) */

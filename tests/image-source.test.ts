@@ -3,17 +3,20 @@
  * 真实 sharp + 临时图片:验证参数校验、文件夹/压缩包缩放、ETag。
  * 不依赖 Electron(protocol 注册在 ipc.ts 集成层验证)。
  */
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, readdir, rm } from 'node:fs/promises'
+import { existsSync, readdirSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { zipSync } from 'fflate'
 import sharp from 'sharp'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
 import {
   MAX_TARGET_WIDTH,
   parseImageSourceParams,
   renderImageSource
 } from '../src/main/image-source'
+import { readImageMeta } from '../src/main/file-service'
+import { setThumbCacheDir } from '../src/main/thumb-cache'
 import { writeFile } from 'node:fs/promises'
 
 let dir: string
@@ -172,5 +175,126 @@ describe('renderImageSource 区域裁剪(真实 sharp)', () => {
     const meta = await sharp(body).metadata()
     expect(meta.width).toBe(250)
     expect(meta.height).toBe(250)
+  })
+})
+
+describe('缩略图磁盘缓存(§性能)', () => {
+  afterEach(() => {
+    setThumbCacheDir('')
+  })
+
+  /** 每个用例独立的缓存目录,避免相互计数干扰 */
+  function cacheDir(name: string): string {
+    return join(dir, `thumbs-${name}`)
+  }
+
+  async function countCached(name: string): Promise<number> {
+    try {
+      return (await readdir(cacheDir(name))).filter((file) => file.endsWith('.jpg')).length
+    } catch {
+      return 0
+    }
+  }
+
+  async function waitForCached(name: string, count: number): Promise<void> {
+    const deadline = Date.now() + 3000
+    while (Date.now() < deadline) {
+      if ((await countCached(name)) >= count) return
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+    throw new Error('缩略图缓存写入超时')
+  }
+
+  it('缩略图请求写入磁盘缓存,重复请求返回一致字节与 ETag', async () => {
+    setThumbCacheDir(cacheDir('reuse'))
+    const params = { path: pngPath, width: 64 }
+    const first = await renderImageSource(params)
+    await waitForCached('reuse', 1)
+    expect(await countCached('reuse')).toBe(1)
+
+    const second = await renderImageSource(params)
+    expect(second.etag).toBe(first.etag)
+    expect(second.body.equals(first.body)).toBe(true)
+    // 键相同:命中缓存不产生新条目
+    expect(await countCached('reuse')).toBe(1)
+  })
+
+  it('区域裁剪请求不写缓存(按视口取块,命中率低)', async () => {
+    setThumbCacheDir(cacheDir('region'))
+    await renderImageSource({
+      path: pngPath,
+      width: 64,
+      region: { x: 0, y: 0, width: 20, height: 20 }
+    })
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(await countCached('region')).toBe(0)
+  })
+
+  it('未注入缓存目录(缓存禁用)时不落盘', async () => {
+    setThumbCacheDir('')
+    await renderImageSource({ path: pngPath, width: 64 })
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    expect(await countCached('disabled')).toBe(0)
+  })
+})
+
+/**
+ * 真实超大图素材(用户提供,位于 `test-img/`,不入库):
+ * 验证真实 32~40MB JPEG 的头部尺寸解析、缩略图缩放与区域渲染(原生图源路径)。
+ * 素材缺失时整块跳过(仓库不包含该目录)。
+ */
+const REAL_IMG_DIR = join(process.cwd(), 'test-img')
+
+function realImages(): string[] {
+  if (!existsSync(REAL_IMG_DIR)) return []
+  return readdirSync(REAL_IMG_DIR)
+    .filter((name) => /\.(jpe?g|png)$/i.test(name))
+    .map((name) => join(REAL_IMG_DIR, name))
+}
+
+describe.skipIf(realImages().length === 0)('真实超大图(test-img/)', () => {
+  it('头部解析得到真实尺寸(瓦片/原生模式判定的依据)', async () => {
+    for (const file of realImages()) {
+      const meta = await readImageMeta(file)
+      console.log(`[test-img] ${basename(file)} → ${meta.width}×${meta.height}`)
+      expect(meta.width).toBeGreaterThan(0)
+      expect(meta.height).toBeGreaterThan(0)
+    }
+  })
+
+  it('缩略图渲染:目标宽 320 且长边等比', async () => {
+    for (const file of realImages()) {
+      const { body } = await renderImageSource({ path: file, width: 320 })
+      const meta = await sharp(body).metadata()
+      expect(meta.format).toBe('jpeg')
+      expect(meta.width).toBe(320)
+      expect(meta.height ?? 0).toBeGreaterThan(0)
+    }
+  })
+
+  it('区域渲染:只解码视口区域且保持宽高比', async () => {
+    for (const file of realImages()) {
+      const full = await readImageMeta(file)
+      const region = {
+        x: Math.floor(full.width / 4),
+        y: Math.floor(full.height / 4),
+        width: 1000,
+        height: 700
+      }
+      const { body } = await renderImageSource({ path: file, region, width: 500 })
+      const meta = await sharp(body).metadata()
+      expect(meta.width).toBeLessThanOrEqual(500)
+      expect(meta.height ?? 0).toBeGreaterThan(0)
+      const ratio = (meta.width ?? 0) / (meta.height ?? 1)
+      expect(Math.abs(ratio - region.width / region.height)).toBeLessThan(0.02)
+    }
+  })
+
+  it('两张超大图连续渲染互不影响(排除解码状态残留)', async () => {
+    const files = realImages()
+    if (files.length < 2) return
+    const a = await renderImageSource({ path: files[0], width: 320 })
+    const b = await renderImageSource({ path: files[1], width: 320 })
+    expect(a.body.equals(b.body)).toBe(false)
   })
 })

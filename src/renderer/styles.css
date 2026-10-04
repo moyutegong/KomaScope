@@ -229,70 +229,35 @@ button:focus-visible {
   background: rgba(255, 92, 92, 0.15);
 }
 
-/* --- 缩略图网格(§用户需求:先看缩略图再选图) --- */
-.sidebar-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: calc(8px * var(--ui-scale));
-  align-content: start;
-  padding: calc(8px * var(--ui-scale)) calc(10px * var(--ui-scale)) calc(12px * var(--ui-scale));
-}
-
-.thumb {
-  position: relative;
+/* --- 侧栏页面列表(§用户需求:只显示文件名,缩略图浏览交给浏览视图) --- */
+.sidebar-page-item {
   display: block;
   width: 100%;
-  padding: 0;
-  aspect-ratio: 3 / 4;
-  background: rgba(255, 255, 255, 0.04);
-  border: calc(2px * var(--ui-scale)) solid transparent;
+  padding: calc(6px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  margin-bottom: calc(2px * var(--ui-scale));
+  background: transparent;
+  border: none;
   border-radius: calc(6px * var(--ui-scale));
-  cursor: pointer;
-  overflow: hidden;
-  transition: border-color 0.15s ease, transform 0.15s ease;
-}
-
-.thumb:hover {
-  border-color: rgba(255, 255, 255, 0.25);
-  transform: translateY(calc(-1px * var(--ui-scale)));
-}
-
-.thumb-active {
-  border-color: var(--accent);
-  box-shadow: 0 0 calc(6px * var(--ui-scale)) var(--accent-soft);
-}
-
-.thumb-img {
-  display: block;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  background: rgba(0, 0, 0, 0.2);
-}
-
-/* 序号角标:左下角,便于与状态栏页码对照 */
-.thumb-badge {
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  padding: 0 calc(5px * var(--ui-scale));
-  font-size: calc(11px * var(--ui-scale));
-  line-height: calc(16px * var(--ui-scale));
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(0, 0, 0, 0.55);
-  border-top-right-radius: calc(5px * var(--ui-scale));
-}
-
-/* 解码失败回退:文本行仍可点击 */
-.thumb-fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.thumb-fallback-label {
-  font-size: calc(13px * var(--ui-scale));
   color: var(--text-dim);
+  font-size: calc(12px * var(--ui-scale));
+  line-height: 1.5;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-page-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+}
+
+.sidebar-page-item-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
 }
 
 /* --- 工具栏 --- */
@@ -362,8 +327,23 @@ button:focus-visible {
   border: 1px solid transparent;
   border-radius: var(--radius);
   font-size: calc(13px * var(--ui-scale));
+  /* 按钮增多后窄窗口下禁止文字换行(挤压文件夹路径标签而非按钮文字) */
+  white-space: nowrap;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* 不可用状态(如浏览视图无上级目录时的"返回上级") */
+.toolbar-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+  transform: none;
+  box-shadow: none;
+}
+
+.toolbar-btn:disabled:hover {
+  background: transparent;
+  border-color: transparent;
 }
 
 .toolbar-btn i {
@@ -434,6 +414,308 @@ button:focus-visible {
 .toolbar-btn-active {
   background: var(--accent-soft);
   border-color: var(--accent);
+}
+
+/* --- 缩略图浏览视图(§资源管理器模式:层级浏览 + 点击缩略图进入阅读) --- */
+.browser {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  z-index: 4;
+}
+
+.browser-bar {
+  display: flex;
+  align-items: center;
+  gap: calc(8px * var(--ui-scale));
+  flex-shrink: 0;
+  padding: calc(8px * var(--ui-scale)) calc(16px * var(--ui-scale));
+  background: rgba(19, 20, 25, 0.6);
+  border-bottom: 1px solid var(--border);
+}
+
+.browser-bar-btn {
+  flex-shrink: 0;
+  padding: 0 calc(8px * var(--ui-scale));
+}
+
+.browser-crumbs {
+  display: flex;
+  align-items: center;
+  gap: calc(4px * var(--ui-scale));
+  min-width: 0;
+  overflow: hidden;
+}
+
+.browser-crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(4px * var(--ui-scale));
+  max-width: calc(220px * var(--ui-scale));
+  padding: calc(4px * var(--ui-scale)) calc(8px * var(--ui-scale));
+  background: transparent;
+  border: none;
+  border-radius: calc(6px * var(--ui-scale));
+  color: var(--text-dim);
+  font-size: calc(12px * var(--ui-scale));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+button.browser-crumb:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+}
+
+.browser-crumb-current {
+  color: var(--text);
+  font-weight: 600;
+  cursor: default;
+}
+
+.browser-crumb-current span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.browser-crumbs .browser-crumb+.browser-crumb::before {
+  content: '›';
+  margin-right: calc(4px * var(--ui-scale));
+  color: rgba(255, 255, 255, 0.25);
+}
+
+.browser-crumb-icon {
+  width: calc(14px * var(--ui-scale));
+  height: calc(14px * var(--ui-scale));
+}
+
+.browser-count {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  font-size: calc(12px * var(--ui-scale));
+}
+
+/* 目录不存在/无权限提示(保留当前视图,不白屏) */
+.browser-notice {
+  flex-shrink: 0;
+  padding: calc(8px * var(--ui-scale)) calc(16px * var(--ui-scale));
+  background: rgba(255, 92, 92, 0.12);
+  border-bottom: 1px solid rgba(255, 92, 92, 0.25);
+  color: var(--danger);
+  font-size: calc(12px * var(--ui-scale));
+  word-break: break-all;
+}
+
+.browser-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* "继续阅读":书库根目录下按各文件夹书签的最近阅读倒序(§观看历史) */
+.browser-recent {
+  padding: calc(12px * var(--ui-scale)) calc(20px * var(--ui-scale)) 0;
+}
+
+.browser-section-title {
+  margin-bottom: calc(8px * var(--ui-scale));
+  font-size: calc(12px * var(--ui-scale));
+  font-weight: 600;
+  letter-spacing: calc(0.1em * var(--ui-scale));
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.browser-recent-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: calc(8px * var(--ui-scale));
+}
+
+.browser-recent-item {
+  display: inline-flex;
+  align-items: center;
+  gap: calc(8px * var(--ui-scale));
+  max-width: calc(260px * var(--ui-scale));
+  padding: calc(8px * var(--ui-scale)) calc(12px * var(--ui-scale));
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-soft-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: calc(13px * var(--ui-scale));
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.browser-recent-item:hover {
+  background: var(--accent-soft-strong);
+}
+
+.browser-recent-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 父目录名(§4.3.5:深层书签靠它辨识所属系列) */
+.browser-recent-parent {
+  flex-shrink: 1;
+  max-width: calc(120px * var(--ui-scale));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-dim);
+  font-size: calc(11px * var(--ui-scale));
+}
+
+.browser-recent-progress {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: calc(12px * var(--ui-scale));
+}
+
+/* 网格:文件夹/压缩包卡片在前,图片缩略图在后(与键盘导航顺序一致) */
+.browser-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(calc(160px * var(--ui-scale)), 1fr));
+  gap: calc(12px * var(--ui-scale));
+  align-content: start;
+  padding: calc(16px * var(--ui-scale)) calc(20px * var(--ui-scale)) calc(24px * var(--ui-scale));
+}
+
+.browser-item {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.03);
+  border: calc(2px * var(--ui-scale)) solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  overflow: hidden;
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+
+.browser-item:hover {
+  border-color: rgba(255, 255, 255, 0.25);
+  transform: translateY(calc(-1px * var(--ui-scale)));
+}
+
+.browser-item-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 calc(8px * var(--ui-scale)) var(--accent-soft);
+}
+
+/* 子文件夹 / 压缩包卡片 */
+.browser-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: calc(8px * var(--ui-scale));
+  height: calc(112px * var(--ui-scale));
+  padding: calc(16px * var(--ui-scale)) calc(10px * var(--ui-scale));
+  text-align: center;
+}
+
+.browser-node-icon {
+  width: calc(40px * var(--ui-scale));
+  height: calc(40px * var(--ui-scale));
+  flex-shrink: 0;
+}
+
+.browser-folder .browser-node-icon {
+  color: var(--accent);
+}
+
+.browser-archive .browser-node-icon {
+  color: #d0a24c;
+}
+
+.browser-node-name {
+  width: 100%;
+  color: var(--text);
+  font-size: calc(13px * var(--ui-scale));
+  line-height: 1.4;
+  /* 长名最多两行,避免卡片高度抖动 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-all;
+}
+
+/* 书签进度徽标(该文件夹/其后代最近阅读位置) */
+.browser-node-progress {
+  position: absolute;
+  right: calc(6px * var(--ui-scale));
+  bottom: calc(6px * var(--ui-scale));
+  padding: 0 calc(6px * var(--ui-scale));
+  border-radius: calc(999px * var(--ui-scale));
+  background: var(--accent-soft-strong);
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: calc(11px * var(--ui-scale));
+  line-height: calc(18px * var(--ui-scale));
+}
+
+/* 图片缩略图 */
+.browser-image {
+  aspect-ratio: 3 / 4;
+}
+
+.browser-thumb {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.browser-thumb-badge {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  padding: 0 calc(5px * var(--ui-scale));
+  border-top-right-radius: calc(5px * var(--ui-scale));
+  background: rgba(0, 0, 0, 0.55);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: calc(11px * var(--ui-scale));
+  line-height: calc(16px * var(--ui-scale));
+}
+
+/* 解码失败回退:显示文件名仍可点击 */
+.browser-thumb-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(10px * var(--ui-scale));
+}
+
+.browser-thumb-fallback-label {
+  color: var(--text-dim);
+  font-size: calc(12px * var(--ui-scale));
+  word-break: break-all;
+}
+
+.browser-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: calc(12px * var(--ui-scale));
+  padding: calc(80px * var(--ui-scale)) calc(20px * var(--ui-scale));
+  color: var(--text-dim);
+  font-size: calc(13px * var(--ui-scale));
+}
+
+.browser-pick-btn {
+  border-color: var(--accent-soft-strong);
+  background: var(--accent-soft);
 }
 
 /* --- 视口 --- */
@@ -551,6 +833,11 @@ button:focus-visible {
 .status-busy {
   color: var(--accent);
   animation: status-busy-pulse 1.2s ease-in-out infinite;
+}
+
+/* 书签续读提示(§观看历史):进入有书签的文件夹时短暂显示 */
+.status-resume {
+  color: var(--accent);
 }
 
 @keyframes status-busy-pulse {

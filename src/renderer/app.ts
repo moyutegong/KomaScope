@@ -4,7 +4,11 @@
  */
 import {
   BookOpen,
+  CornerLeftUp,
   FolderOpen,
+  House,
+  LayoutGrid,
+  Library,
   Lock,
   Maximize,
   Minus,
@@ -16,13 +20,14 @@ import {
   X,
   createIcons
 } from 'lucide'
-import type { ScanResult } from '../shared/types'
+import type { BookmarkMap } from '../shared/types'
 import type { Point } from '../shared/transform-model'
 import { naturalCompare } from '../shared/natural-sort'
 import { applyStaticText, isLocale, setLocale, t } from './i18n'
 import { ImageRenderer } from './viewer/image-renderer'
 import { InputController, wheelDeltaToFactor } from './viewer/input-controller'
 import { ViewerController } from './viewer/viewer-controller'
+import { Browser } from './ui/browser'
 import { Toolbar } from './ui/toolbar'
 import { StatusBar } from './ui/statusbar'
 import { Sidebar } from './ui/sidebar'
@@ -48,9 +53,18 @@ function main(): void {
     onPagesChanged: (pages, currentIndex) => {
       sidebar.setPages(pages, currentIndex, controller.currentPage?.path ?? '')
       longView.setPages(pages, currentIndex)
+      // 阅读内容增减时同步「缩略图浏览」按钮态(§5.2)
+      syncBrowseButton()
     },
     // 拖入/打开新来源后立即刷新侧栏历史(无需重启,§侧栏)
-    onRecentChanged: (recent) => sidebar.setHistory(recent)
+    onRecentChanged: (recent) => sidebar.setHistory(recent),
+    // 书签写入后刷新浏览视图进度徽标/"继续阅读"(§观看历史)
+    onBookmarksChanged: (map) => {
+      bookmarks = map
+      browser.refreshBookmarks()
+    },
+    // 按书签续读:状态栏短暂提示当前进度(§观看历史)
+    onResumed: ({ index, pageCount }) => statusbar.flashResume(index + 1, pageCount)
   })
 
   // --- 长图模式(§需求4):所有图片垂直拼接成单页无限下拉 ---
@@ -64,10 +78,16 @@ function main(): void {
   const placeholderEl = document.getElementById('placeholder') as HTMLElement
   const viewModeBtn = document.getElementById('btn-view-mode') as HTMLButtonElement
   let viewMode: 'page' | 'long' = 'page'
+  /** 应用视图(§资源管理器模式):browse = 缩略图层级浏览,read = 画布/长图阅读 */
+  let appView: 'browse' | 'read' = 'browse'
+  /** 各文件夹独立的书签(§观看历史):启动从配置读取,阅读时由 controller 回调刷新 */
+  let bookmarks: BookmarkMap = {}
+  /** 书库根目录(空字符串表示未设置) */
+  let libraryRoot = ''
 
-  const setViewMode = (mode: 'page' | 'long'): void => {
-    viewMode = mode
-    const long = mode === 'long'
+  /** 阅读视图显隐(长图 ↔ 画布 ↔ 空状态占位) */
+  const applyReadView = (): void => {
+    const long = viewMode === 'long'
     longView.setVisible(long)
     // 长图模式:隐藏 placeholder(避免覆盖拦截点击);退出后:
     // 有图片 → renderer.setVisible(true) 恢复 canvas 并隐藏提示;
@@ -75,21 +95,46 @@ function main(): void {
     if (long) {
       canvasEl.hidden = true
       placeholderEl.hidden = true
-    } else {
-      canvasEl.hidden = false
-      if (controller.pageCount > 0) {
-        renderer.setVisible(true)
-      } else {
-        placeholderEl.hidden = false
-      }
-      controller.applyFit()
+      return
     }
-    viewModeBtn.classList.toggle('toolbar-btn-active', long)
+    canvasEl.hidden = false
+    if (controller.pageCount > 0) {
+      renderer.setVisible(true)
+    } else {
+      placeholderEl.hidden = false
+    }
+    controller.applyFit()
+  }
+
+  const setViewMode = (mode: 'page' | 'long'): void => {
+    viewMode = mode
+    viewModeBtn.classList.toggle('toolbar-btn-active', mode === 'long')
+    // 浏览视图下仅记录模式,显隐由 setAppView 统一接管
+    if (appView === 'read') applyReadView()
   }
 
   viewModeBtn.addEventListener('click', () => {
     setViewMode(viewMode === 'page' ? 'long' : 'page')
   })
+
+  /**
+   * 切换应用视图:
+   * - browse:显示缩略图浏览视图(资源管理器式层级),隐藏画布/长图/占位;
+   * - read:隐藏浏览视图,恢复阅读视图(画布或长图)。
+   */
+  const setAppView = (view: 'browse' | 'read'): void => {
+    appView = view
+    syncBrowseButton()
+    if (view === 'browse') {
+      browser.setVisible(true)
+      canvasEl.hidden = true
+      longView.setVisible(false)
+      placeholderEl.hidden = true
+      return
+    }
+    browser.setVisible(false)
+    applyReadView()
+  }
 
   const sidebar = new Sidebar({
     onOpenPath: (path) => {
@@ -97,9 +142,11 @@ function main(): void {
         try {
           const s = await window.komascope.statPath(path)
           if (s.isDirectory) {
-            await controller.openFolder(path)
+            // 目录 → 缩略图浏览视图(§资源管理器模式)
+            await browseFolder(path)
           } else if (isArchiveFile(path)) {
             await controller.openArchive(path)
+            setAppView('read')
           }
         } catch {
           // 历史路径可能已被删除/移动,静默失败并提示
@@ -120,6 +167,24 @@ function main(): void {
     },
     onSelectPage: (index) => controller.gotoPage(index)
   })
+
+  // --- 缩略图浏览视图(§资源管理器模式):层级浏览 → 点击缩略图进入阅读 ---
+  const browser = new Browser(
+    {
+      onOpenFolderImages: (folderPath, images, index) => {
+        void controller.openPages(folderPath, images, index).then(() => setAppView('read'))
+      },
+      onOpenArchive: (archivePath) => {
+        void controller.openArchive(archivePath).then(() => setAppView('read'))
+      },
+      onResumeFolder: (folderPath) => void resumeFolder(folderPath),
+      onPickLibrary: () => void pickLibrary()
+    },
+    {
+      getBookmarks: () => bookmarks,
+      getLibraryRoot: () => libraryRoot
+    }
+  )
 
   // --- 4K / HiDPI(§4.4) ---
 
@@ -149,19 +214,93 @@ function main(): void {
     toolbar.refresh()
     statusbar.refresh()
     sidebar.refresh()
+    browser.refresh()
   }
 
   const toolbar = new Toolbar({
-    onFolderOpened: (result: ScanResult) => {
-      toolbar.setFolder(result.folderPath)
-      void controller.openFolder(result.folderPath)
+    onFolderPicked: (folderPath) => void browseFolder(folderPath),
+    onLibraryPick: (folderPath) => void applyLibraryRoot(folderPath),
+    onBrowseToggle: () => {
+      // 无页面时不切换(避免进入空的阅读视图)
+      if (controller.pageCount === 0) return
+      setAppView(appView === 'browse' ? 'read' : 'browse')
     },
+    onLibraryRoot: () => backToLibrary(),
     onFitScreen: async () => {
       // 一键"适应屏幕":铺满当前显示器工作区(FR-8)
       const info = await window.komascope.getWindowInfo()
       await window.komascope.setWindowBounds(info.workArea)
     }
   })
+
+  /**
+   * 在缩略图浏览视图中打开目录(§资源管理器模式):
+   * 工具栏/菜单/拖入/历史点击的目录入口统一走这里。
+   */
+  const browseFolder = async (folderPath: string): Promise<void> => {
+    setAppView('browse')
+    toolbar.setFolder(folderPath)
+    await browser.open(folderPath)
+  }
+
+  /**
+   * 应用书库根目录(§观看历史):持久化后以该书架根目录打开浏览视图。
+   * 只接收**已选路径**(不弹框):选择框由入口负责,避免重复弹框(§4.1 缺陷)。
+   */
+  const applyLibraryRoot = async (folderPath: string): Promise<void> => {
+    libraryRoot = folderPath
+    void window.komascope.setConfig({ libraryRoot: folderPath })
+    await browseFolder(folderPath)
+  }
+
+  /**
+   * 选择书库根目录(内部弹一次选择框):仅"没有已选路径"的入口使用 ——
+   * 应用菜单「打开书库目录」(Ctrl+L) 与浏览视图的引导按钮。
+   * 工具栏「书库目录」按钮走 onLibraryPick(已选路径)→ applyLibraryRoot。
+   */
+  const pickLibrary = async (): Promise<void> => {
+    const folderPath = await window.komascope.pickFolder()
+    if (folderPath === null) return
+    await applyLibraryRoot(folderPath)
+  }
+
+  /**
+   * 一键返回书库根目录(§4.2):阅读图片时也可直接跳到书库书架的缩略图浏览视图。
+   * 未设置书库时进入选择流程;浏览视图内的「书库根目录」按钮与之等价。
+   */
+  const backToLibrary = (): void => {
+    if (libraryRoot.length === 0) {
+      void pickLibrary()
+      return
+    }
+    // 结束当前阅读(§5.2):清空阅读状态后再回书架,避免「缩略图浏览」把用户带回旧图
+    controller.closeSource()
+    setAppView('browse')
+    browser.goToLibraryRoot()
+  }
+
+  /** 缩略图浏览按钮态:仅在存在阅读内容时可切换与高亮(§5.2) */
+  const syncBrowseButton = (): void => {
+    toolbar.setBrowseState(appView === 'browse', controller.pageCount > 0)
+  }
+
+  /**
+   * 从"继续阅读"进入某文件夹:列举该层图片后按书签(§观看历史)续读;
+   * 该文件夹本身没有图片(仅子文件夹)时退回浏览视图,由用户继续进下一级。
+   */
+  const resumeFolder = async (folderPath: string): Promise<void> => {
+    try {
+      const listing = await window.komascope.listDirectory(folderPath)
+      if (listing.images.length === 0) {
+        await browseFolder(folderPath)
+        return
+      }
+      await controller.openPages(folderPath, listing.images)
+      setAppView('read')
+    } catch (err) {
+      console.error(t('error.browseFolder'), folderPath, err)
+    }
+  }
 
   // 侧栏显示/隐藏切换
   const sidebarEl = document.getElementById('sidebar') as HTMLElement
@@ -310,11 +449,6 @@ function main(): void {
     return { x: v.width / 2, y: v.height / 2 }
   }
 
-  const exitFullscreenIfNeeded = async (): Promise<void> => {
-    const info = await window.komascope.getWindowInfo()
-    if (info.isFullScreen) await window.komascope.toggleFullscreen()
-  }
-
   // 输入映射(§5 交互表)
   new InputController({
     onPathsDropped: (paths) => {
@@ -322,13 +456,16 @@ function main(): void {
         try {
           const first = await window.komascope.statPath(paths[0])
           if (first.isDirectory) {
-            await controller.openFolder(paths[0])
+            // 拖入目录 → 缩略图浏览视图(§资源管理器模式)
+            await browseFolder(paths[0])
           } else if (paths.length === 1 && isArchiveFile(paths[0])) {
             // 拖入单个 cbz/zip:作为压缩包打开(§13 P0)
             await controller.openArchive(paths[0])
+            setAppView('read')
           } else {
             paths.sort((a, b) => naturalCompare(fileName(a), fileName(b)))
             await controller.openFiles(paths)
+            setAppView('read')
           }
         } catch {
           // 拖入路径可能已被删除/移动,避免未捕获 rejection
@@ -346,6 +483,12 @@ function main(): void {
     onLongViewZoom: (factor) => longView.zoomBy(factor),
     onDoubleClick: () => controller.toggleFitScreenCustom(),
     onKeyDown: (e) => {
+      // 浏览视图(§资源管理器模式):方向键/Enter/Backspace 交给浏览视图处理,
+      // 阅读快捷键(缩放/翻页/适配)不生效
+      if (appView === 'browse') {
+        if (browser.handleKey(e)) e.preventDefault()
+        return
+      }
       switch (e.key) {
         case 'ArrowLeft':
           controller.prevPage()
@@ -391,9 +534,20 @@ function main(): void {
           void window.komascope.toggleFullscreen()
           break
         case 'Escape':
-          // 沉浸模式:退出无边框沉浸并恢复 UI;全屏:退出 OS 全屏
-          if (immersive) void setImmersive(false)
-          else void exitFullscreenIfNeeded()
+          // 沉浸模式:退出无边框沉浸并恢复 UI;全屏:退出 OS 全屏;
+          // 两者都不是:从阅读视图返回缩略图浏览(§资源管理器模式)
+          if (immersive) {
+            void setImmersive(false)
+          } else {
+            void (async () => {
+              const info = await window.komascope.getWindowInfo()
+              if (info.isFullScreen) {
+                await window.komascope.toggleFullscreen()
+                return
+              }
+              if (appView === 'read') setAppView('browse')
+            })()
+          }
           break
       }
     }
@@ -411,29 +565,51 @@ function main(): void {
   // DPR 变化监听(拖动到不同缩放显示器,§4.4 / §12)
   watchDpr()
 
-  // lucide 图标:替换 [data-lucide] 元素为 SVG(在文案应用之前执行)
+  // lucide 图标:替换 [data-lucide] 元素为 SVG(在文案应用之前执行)。
+  // 注意:index.html 中出现的每个 data-lucide 名称都必须在此注册,
+  // 否则该图标不渲染(lucide 仅告警)。动态创建的元素由 browser.ts 用 createElement 直接构建。
   createIcons({
-    icons: { BookOpen, FolderOpen, Lock, Maximize, Minus, MousePointerClick, PanelLeft, Rows3, Scan, Square, X }
+    icons: {
+      BookOpen,
+      CornerLeftUp,
+      FolderOpen,
+      House,
+      LayoutGrid,
+      Library,
+      Lock,
+      Maximize,
+      Minus,
+      MousePointerClick,
+      PanelLeft,
+      Rows3,
+      Scan,
+      Square,
+      X
+    }
   })
 
   // 应用菜单动作(主进程 File/View 菜单,§5 快捷键等价)
   window.komascope.onMenuAction((action) => {
     switch (action) {
       case 'open-folder':
-        void window.komascope.openFolderDialog().then((result) => {
-          if (result) {
-            toolbar.setFolder(result.folderPath)
-            void controller.openFolder(result.folderPath)
-          }
+        void window.komascope.pickFolder().then((folderPath) => {
+          if (folderPath !== null) void browseFolder(folderPath)
         })
         break
       case 'open-archive':
         void window.komascope.openArchiveDialog().then((result) => {
           if (result) {
             toolbar.setFolder(result.folderPath)
-            void controller.openArchive(result.folderPath)
+            void controller.openArchive(result.folderPath).then(() => setAppView('read'))
           }
         })
+        break
+      case 'open-library':
+        void pickLibrary()
+        break
+      case 'toggle-browse':
+        // 菜单/快捷键等价于工具栏"缩略图浏览"按钮
+        if (controller.pageCount > 0) setAppView(appView === 'browse' ? 'read' : 'browse')
         break
       case 'prev-page':
         controller.prevPage()
@@ -496,7 +672,15 @@ function main(): void {
       else applyLocale('zh')
       sidebar.setHistory(config.recentFolders)
       controller.restoreConfig(config)
+      // 书签 + 书库根目录(§观看历史):启动即进入书库(自动列出下一级文件夹)
+      bookmarks = config.bookmarks
+      libraryRoot = config.libraryRoot
       if (config.autoHide) setAutoHide(true)
+      if (libraryRoot.length > 0) void browseFolder(libraryRoot)
+      else {
+        setAppView('browse')
+        browser.showWelcome()
+      }
       // 按持久化语言重建应用菜单
       void window.komascope.setMenuLocale(isLocale(config.locale) ? config.locale : 'zh')
     })

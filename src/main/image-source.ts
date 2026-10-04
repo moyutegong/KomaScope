@@ -7,7 +7,9 @@
  * 输出:mozjpeg 渐进 JPEG(q80),HTTP 缓存(mtime/大小+目标宽 ETag)。
  */
 import sharp from 'sharp'
+import { stat } from 'node:fs/promises'
 import { readArchiveEntry } from './zip-source'
+import { isThumbCacheEnabled, readThumb, thumbCacheKey, writeThumb } from './thumb-cache'
 
 /** 协议名(渲染进程与主进程共享) */
 export const IMAGE_SOURCE_PROTOCOL = 'komascope-thumb'
@@ -80,16 +82,64 @@ function parseRegion(
  * 流式生成缩放 JPEG(§性能):libvips 仅驻留小块区域,
  * resize 在解码管线内完成,1 亿像素图缩放至 256 宽内存仅数 MB。
  * 渐进式输出使浏览器可边下边渲染(缩略图快速显示)。
+ *
+ * 缩略图请求(指定目标宽、无区域裁剪)先查磁盘缓存(§性能),
+ * 未命中才渲染并异步写缓存;区域裁剪/整图请求不缓存。
  */
 export async function renderImageSource(
   params: ImageSourceParams
 ): Promise<{ body: Buffer; etag: string }> {
+  const cacheable = isThumbnailRequest(params)
+  if (cacheable) {
+    const cached = await readThumbFor(params)
+    if (cached) return { body: cached, etag: imageSourceEtag(params, cached) }
+  }
   const body = await renderImageSourceBody(params)
-  // ETag:路径+条目+目标宽+区域+输出长度,内容变化即失效(目录扫描重载自然刷新)
+  if (cacheable) void writeThumbFor(params, body)
+  return { body, etag: imageSourceEtag(params, body) }
+}
+
+/** 是否可缓存:指定目标宽且无区域裁剪(缩略图场景;区域裁剪按视口取块不缓存) */
+function isThumbnailRequest(params: ImageSourceParams): boolean {
+  return params.width !== undefined && params.width > 0 && params.region === undefined
+}
+
+/** ETag:路径+条目+目标宽+区域+输出长度,内容变化即失效(目录扫描重载自然刷新) */
+function imageSourceEtag(params: ImageSourceParams, body: Buffer): string {
   const r = params.region
   const regionTag = r ? `${r.x},${r.y},${r.width},${r.height}` : ''
-  const etag = `W/"${Buffer.byteLength(params.path)}-${(params.archiveEntry ?? '').length}-${params.width ?? 0}-${regionTag}-${body.length}"`
-  return { body, etag }
+  return `W/"${Buffer.byteLength(params.path)}-${(params.archiveEntry ?? '').length}-${params.width ?? 0}-${regionTag}-${body.length}"`
+}
+
+/** 缓存键:源文件 mtime/字节数参与指纹,源文件被替换后自动失效 */
+async function thumbKeyFor(params: ImageSourceParams): Promise<string> {
+  const info = await stat(params.path)
+  return thumbCacheKey({
+    path: params.path,
+    archiveEntry: params.archiveEntry,
+    width: params.width ?? 0,
+    mtimeMs: info.mtimeMs,
+    size: info.size
+  })
+}
+
+/** 读缩略图缓存(未启用/未命中/异常一律返回 null,回退实时渲染) */
+async function readThumbFor(params: ImageSourceParams): Promise<Buffer | null> {
+  if (!isThumbCacheEnabled()) return null
+  try {
+    return await readThumb(await thumbKeyFor(params))
+  } catch {
+    return null
+  }
+}
+
+/** 写缩略图缓存(异步、失败静默:不影响本次响应) */
+async function writeThumbFor(params: ImageSourceParams, body: Buffer): Promise<void> {
+  try {
+    await writeThumb(await thumbKeyFor(params), body)
+  } catch {
+    // 源文件不可 stat 等异常:本次不缓存
+  }
 }
 
 /** 缩放输出主体(无 ETag;大图分层与元数据读取共用) */

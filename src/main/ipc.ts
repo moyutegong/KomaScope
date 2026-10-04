@@ -5,8 +5,9 @@
 import { BrowserWindow, dialog, ipcMain, net, protocol, screen } from 'electron'
 import { stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
-import { readImageMeta, scanFolder } from './file-service'
+import { listDirectory, readImageMeta } from './file-service'
 import { readArchiveEntry, scanArchive } from './zip-source'
+import { createSingleFlight } from '../shared/single-flight'
 import {
   IMAGE_SOURCE_PROTOCOL,
   parseImageSourceParams,
@@ -16,10 +17,16 @@ import {
 import { configStore } from './config-store'
 import { buildAppMenu } from './menu'
 import { rebuildMainWindow } from './window-manager'
-import type { AppConfig, PathStat, WindowInfo } from '../shared/types'
+import type { AppConfig, BookmarkInput, BookmarkMap, DirectoryListing, PathStat, WindowInfo } from '../shared/types'
 
 /** 自定义协议名:渲染进程经 fetch 流式读取本地图片(4.2) */
 export const FILE_PROTOCOL = 'komascope-file'
+
+/**
+ * 目录选择对话框的重入保护(§4.1 缺陷修复):同一时刻只允许一个选择框在开。
+ * 重复触发(双击 / 事件重复绑定 / 菜单与按钮混用)时第二次直接返回 null,不再叠加弹框。
+ */
+const pickFolderOnce = createSingleFlight<string | null>()
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === 'string' && v.length > 0
@@ -29,6 +36,28 @@ function isBounds(v: unknown): v is { x: number; y: number; width: number; heigh
   if (typeof v !== 'object' || v === null) return false
   const b = v as Record<string, unknown>
   return [b.x, b.y, b.width, b.height].every((n) => typeof n === 'number' && Number.isFinite(n))
+}
+
+/** 非负整数校验(书签下标/数量:拒绝 NaN/负数/小数,防止脏数据落盘) */
+function isCount(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0
+}
+
+/** 校验 config:setBookmark 载荷,非法抛错(IPC 边界,§NFR-5) */
+function parseBookmarkInput(v: unknown): BookmarkInput {
+  if (typeof v !== 'object' || v === null) throw new Error('config:setBookmark 需要对象')
+  const b = v as Record<string, unknown>
+  if (!isNonEmptyString(b.folderPath)) throw new Error('config:setBookmark 需要 folderPath')
+  if (!isNonEmptyString(b.lastImagePath)) throw new Error('config:setBookmark 需要 lastImagePath')
+  if (!isCount(b.lastIndex) || !isCount(b.pageCount)) {
+    throw new Error('config:setBookmark 需要非负整数下标')
+  }
+  return {
+    folderPath: b.folderPath,
+    lastImagePath: b.lastImagePath,
+    lastIndex: Math.floor(b.lastIndex),
+    pageCount: Math.floor(b.pageCount)
+  }
 }
 
 function getWindowInfo(win: BrowserWindow): WindowInfo {
@@ -135,6 +164,9 @@ export function registerIpc(): void {
     if (!isNonEmptyString(path)) throw new Error('config:addRecentFolder 需要非空路径')
     return configStore.addRecentFolder(path)
   })
+  ipcMain.handle('config:setBookmark', (_event, bookmark: unknown): BookmarkMap =>
+    configStore.setBookmark(parseBookmarkInput(bookmark))
+  )
 
   // --- 菜单(语言切换后重建应用菜单) ---
   ipcMain.handle('menu:set-locale', (event, locale: unknown) => {
@@ -144,23 +176,22 @@ export function registerIpc(): void {
     buildAppMenu(locale, win)
   })
 
-  // --- 文件夹 ---
-  ipcMain.handle('folder:open', async (event) => {
+  // --- 文件夹(浏览视图:选择目录 + 列举当前层,§资源管理器模式) ---
+  ipcMain.handle('folder:pick', async (event): Promise<string | null> => {
     const win = BrowserWindow.fromWebContents(event.sender)
-    const result = await dialog.showOpenDialog(win ?? undefined!, {
-      title: '打开漫画文件夹',
-      properties: ['openDirectory']
+    return pickFolderOnce(async () => {
+      const result = await dialog.showOpenDialog(win ?? undefined!, {
+        title: '选择文件夹',
+        properties: ['openDirectory']
+      })
+      if (result.canceled || result.filePaths.length === 0) return null
+      return result.filePaths[0]
     })
-    if (result.canceled || result.filePaths.length === 0) return null
-    const folderPath = result.filePaths[0]
-    const pages = await scanFolder(folderPath)
-    return { folderPath, pages }
   })
 
-  ipcMain.handle('folder:scan', async (_event, folderPath: unknown) => {
-    if (!isNonEmptyString(folderPath)) throw new Error('folder:scan 需要非空路径')
-    const pages = await scanFolder(folderPath)
-    return { folderPath, pages }
+  ipcMain.handle('folder:list', async (_event, folderPath: unknown): Promise<DirectoryListing> => {
+    if (!isNonEmptyString(folderPath)) throw new Error('folder:list 需要非空路径')
+    return listDirectory(folderPath)
   })
 
   // --- 压缩包源(zip/cbz,§13 P0) ---

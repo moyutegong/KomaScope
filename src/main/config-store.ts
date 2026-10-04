@@ -5,10 +5,13 @@
 import { app } from 'electron'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { AppConfig } from '../shared/types'
+import type { AppConfig, BookmarkInput, BookmarkMap, FolderBookmark } from '../shared/types'
 
 /** 写盘防抖间隔(ms,§4.5) */
 export const SAVE_DEBOUNCE_MS = 500
+
+/** 书签表上限(超出按更新时间保留最新,防止配置文件无限膨胀) */
+export const MAX_BOOKMARKS = 500
 
 export const DEFAULT_CONFIG: AppConfig = {
   windowBounds: { x: 0, y: 0, width: 1280, height: 720 },
@@ -24,6 +27,8 @@ export const DEFAULT_CONFIG: AppConfig = {
   lastPage: 0,
   layoutMode: 'single',
   recentFolders: [],
+  libraryRoot: '',
+  bookmarks: {},
   autoHide: true
 }
 
@@ -46,9 +51,12 @@ export function normalizeConfig(raw: unknown): AppConfig {
       : DEFAULT_CONFIG.lastPage,
     layoutMode: src.layoutMode === 'spread' ? 'spread' : 'single',
     recentFolders: sanitizeRecentFolders(src.recentFolders),
+    libraryRoot: typeof src.libraryRoot === 'string' ? src.libraryRoot : DEFAULT_CONFIG.libraryRoot,
+    bookmarks: sanitizeBookmarks(src.bookmarks),
     // autoHide 默认开启(§需求):字段缺失(undefined)视为 true,仅显式 false 关闭
     autoHide: src.autoHide !== false
   }
+}
 
 /** 最近文件夹历史:字符串数组、去空、上限 10(§侧栏) */
 function sanitizeRecentFolders(raw: unknown): string[] {
@@ -62,6 +70,46 @@ function sanitizeRecentFolders(raw: unknown): string[] {
   }
   return list
 }
+
+/** 非负整数校验(书签下标/数量/时间戳) */
+function isCount(v: unknown): v is number {
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0
+}
+
+/** 书签表清洗:逐项校验,非法项丢弃(向前兼容旧配置) */
+function sanitizeBookmarks(raw: unknown): BookmarkMap {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {}
+  const map: BookmarkMap = {}
+  for (const value of Object.values(raw as Record<string, unknown>)) {
+    const bookmark = sanitizeBookmark(value)
+    if (bookmark) map[bookmark.folderPath] = bookmark
+  }
+  return pruneBookmarks(map)
+}
+
+function sanitizeBookmark(raw: unknown): FolderBookmark | null {
+  if (typeof raw !== 'object' || raw === null) return null
+  const b = raw as Record<string, unknown>
+  if (typeof b.folderPath !== 'string' || b.folderPath.length === 0) return null
+  if (typeof b.lastImagePath !== 'string' || b.lastImagePath.length === 0) return null
+  if (!isCount(b.lastIndex) || !isCount(b.pageCount) || !isCount(b.updatedAt)) return null
+  return {
+    folderPath: b.folderPath,
+    lastImagePath: b.lastImagePath,
+    lastIndex: Math.floor(b.lastIndex),
+    pageCount: Math.floor(b.pageCount),
+    updatedAt: Math.floor(b.updatedAt)
+  }
+}
+
+/** 超过上限时按更新时间保留最新的 MAX_BOOKMARKS 项 */
+function pruneBookmarks(map: BookmarkMap): BookmarkMap {
+  const entries = Object.entries(map)
+  if (entries.length <= MAX_BOOKMARKS) return map
+  entries.sort((a, b) => b[1].updatedAt - a[1].updatedAt)
+  const kept: BookmarkMap = {}
+  for (const [key, value] of entries.slice(0, MAX_BOOKMARKS)) kept[key] = value
+  return kept
 }
 
 function sanitizeBounds(raw: unknown): AppConfig['windowBounds'] {
@@ -123,6 +171,21 @@ export class ConfigStore {
     this.config.recentFolders = this.config.recentFolders.filter((p) => p !== path)
     this.scheduleSave()
     return this.config.recentFolders
+  }
+
+  /**
+   * 原子写入一个文件夹书签(§观看历史):主进程内同步读-改-写,
+   * 避免渲染进程并发 getConfig+setConfig 时后写覆盖先写(连续翻页丢书签)。
+   * updatedAt 由主进程生成,保证"最近阅读"排序单调。返回更新后的书签表。
+   */
+  setBookmark(input: BookmarkInput): BookmarkMap {
+    const next: BookmarkMap = {
+      ...this.config.bookmarks,
+      [input.folderPath]: { ...input, updatedAt: Date.now() }
+    }
+    this.config.bookmarks = pruneBookmarks(next)
+    this.scheduleSave()
+    return this.config.bookmarks
   }
 
   /** 立即落盘(窗口关闭、退出前调用) */

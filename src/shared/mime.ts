@@ -34,6 +34,14 @@ function extOf(name: string): string {
   return i < 0 ? '' : name.slice(i).toLowerCase()
 }
 
+/** 压缩包扩展名(§13 P0 zip/cbz;浏览视图可直接点击进入阅读) */
+const ARCHIVE_EXT = new Set(['.cbz', '.zip'])
+
+/** 是否压缩包文件名(cbz/zip,大小写不敏感) */
+export function isArchiveName(name: string): boolean {
+  return ARCHIVE_EXT.has(extOf(name))
+}
+
 /**
  * Chromium 原生可解码格式(createImageBitmap 直接可用):
  * JPEG / PNG / WebP / GIF / BMP / AVIF。

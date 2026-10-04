@@ -3,7 +3,7 @@
  * M4 范围:瓦片/整页双模式(§4.4 超大图)、相邻页预解码 + LRU(NFR-2/NFR-4)。
  * M3 范围:平移、锚点缩放、适配模式切换、缩放锁定(FR-7)、配置恢复。
  */
-import type { AppConfig, FitMode, PageItem } from '../../shared/types'
+import type { AppConfig, BookmarkInput, BookmarkMap, FitMode, PageItem } from '../../shared/types'
 import {
   applyFit,
   centerTransform,
@@ -30,6 +30,9 @@ import type { StatusBar } from '../ui/statusbar'
  * 100+ 事件/秒),合并为低频 IPC 写入;主进程侧另有 500ms 落盘防抖 */
 const PERSIST_DEBOUNCE_MS = 150
 
+/** 书签写入节流(§观看历史):连续翻页 500ms 内只写一次 IPC,卸载时冲刷 */
+const BOOKMARK_DEBOUNCE_MS = 500
+
 /** GPU 纹理上限阈值(§4.4:约 8192px),超过启用瓦片渲染 */
 const TILED_THRESHOLD = 8192
 
@@ -54,6 +57,19 @@ export interface ViewerCallbacks {
   onPagesChanged?: (pages: PageItem[], currentIndex: number) => void
   /** 最近打开历史变化(侧栏历史同步:拖入/打开新来源后刷新,§侧栏) */
   onRecentChanged?: (recent: string[]) => void
+  /** 书签变化(浏览视图刷新进度徽标/"继续阅读",§观看历史) */
+  onBookmarksChanged?: (bookmarks: BookmarkMap) => void
+  /** 按书签续读(进入有书签的来源时回调,状态栏提示用,§观看历史) */
+  onResumed?: (info: { index: number; pageCount: number }) => void
+}
+
+/**
+ * 取路径所在文件夹(去掉最后一段);仅用于拖入图片时的书签归属判定。
+ * 渲染进程无 node:path,按分隔符切分即可。
+ */
+function parentFolder(path: string): string {
+  const index = Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/'))
+  return index > 0 ? path.slice(0, index) : ''
 }
 
 export class ViewerController {
@@ -121,14 +137,22 @@ export class ViewerController {
   private renderQueued = false
   /** 变换配置持久化防抖计时器(§性能) */
   private persistTimer: ReturnType<typeof setTimeout> | null = null
+  /** 当前来源(文件夹/压缩包绝对路径):书签归属,§观看历史 */
+  private sourcePath = ''
+  /** 书签写入节流计时器与待写入载荷(连续翻页只写最后一次) */
+  private bookmarkTimer: ReturnType<typeof setTimeout> | null = null
+  private pendingBookmark: BookmarkInput | null = null
 
   constructor(
     private readonly renderer: ImageRenderer,
     private readonly statusbar: StatusBar,
     private readonly callbacks: ViewerCallbacks = {}
   ) {
-    // 页面卸载(关窗/退出)前冲刷防抖中的配置,避免最后一次缩放丢失
-    window.addEventListener('pagehide', () => this.flushPendingConfig())
+    // 页面卸载(关窗/退出)前冲刷防抖中的配置与书签,避免最后一次丢失
+    window.addEventListener('pagehide', () => {
+      this.flushPendingConfig()
+      this.flushBookmarkNow()
+    })
   }
 
   get pageCount(): number {
@@ -215,22 +239,34 @@ export class ViewerController {
     return this.layoutMode === 'spread'
   }
 
-  /** 打开文件夹(FR-1):扫描 → 定位到上次阅读页(§13 P1)或第 0 页 */
-  async openFolder(folderPath: string): Promise<void> {
-    const result = await window.komascope.scanFolder(folderPath)
-    const initial = await this.restorePageIndex(folderPath, result.pages.length)
-    this.setPages(result.pages, initial)
+  /**
+   * 打开一组页面并进入阅读(浏览视图点击缩略图 / "继续阅读"):
+   * 图片列表由调用方传入(浏览视图直接复用目录列举结果,不重复扫描目录);
+   * initialIndex 缺省时按该书签(§观看历史)恢复上次浏览位置。
+   */
+  async openPages(folderPath: string, pages: PageItem[], initialIndex?: number): Promise<void> {
+    if (pages.length === 0) return
+    this.sourcePath = folderPath
+    const resume = initialIndex === undefined
+      ? await this.findResumeIndex(folderPath, pages)
+      : { index: initialIndex, resumed: false }
+    this.setPages(pages, resume.index)
     this.callbacks.onFolderChanged?.(folderPath)
+    if (resume.resumed) this.callbacks.onResumed?.({ index: resume.index, pageCount: pages.length })
     await this.pushRecentFolder(folderPath)
     void window.komascope.setConfig({ lastFolder: folderPath })
   }
 
-  /** 打开 zip/cbz 压缩包(§13 P0):扫描条目 → 定位到上次阅读页或第 0 页 */
+  /** 打开 zip/cbz 压缩包(§13 P0):扫描条目 → 按该书签续读或从第 0 页开始 */
   async openArchive(archivePath: string): Promise<void> {
     const result = await window.komascope.scanArchive(archivePath)
-    const initial = await this.restorePageIndex(archivePath, result.pages.length)
-    this.setPages(result.pages, initial)
+    this.sourcePath = archivePath
+    const resume = await this.findResumeIndex(archivePath, result.pages)
+    this.setPages(result.pages, resume.index)
     this.callbacks.onFolderChanged?.(archivePath)
+    if (resume.resumed) {
+      this.callbacks.onResumed?.({ index: resume.index, pageCount: result.pages.length })
+    }
     await this.pushRecentFolder(archivePath)
     void window.komascope.setConfig({ lastFolder: archivePath })
   }
@@ -245,18 +281,78 @@ export class ViewerController {
     }
   }
 
-  /** 书签恢复(§13 P1):同一来源且 lastPage 有效时从上次页码继续 */
-  private async restorePageIndex(sourcePath: string, pageCount: number): Promise<number> {
-    if (pageCount <= 0) return 0
+  /**
+   * 定位上次浏览位置(§观看历史,每个文件夹各自独立):
+   * ① 该书签存在时按图片路径匹配(图片被增删/改名后自动退化为下标);
+   * ② 无书签时回退旧版全局 lastFolder/lastPage(向前兼容旧配置);
+   * ③ 均无有效记录则从第 0 页开始。
+   */
+  private async findResumeIndex(
+    sourcePath: string,
+    pages: PageItem[]
+  ): Promise<{ index: number; resumed: boolean }> {
+    if (pages.length === 0) return { index: 0, resumed: false }
     try {
       const config = await window.komascope.getConfig()
-      if (config.lastFolder === sourcePath && config.lastPage > 0 && config.lastPage < pageCount) {
-        return config.lastPage
+      const bookmark = config.bookmarks[sourcePath]
+      if (bookmark) {
+        const byPath = pages.findIndex((page) => page.path === bookmark.lastImagePath)
+        if (byPath >= 0) return { index: byPath, resumed: true }
+        if (bookmark.lastIndex >= 0 && bookmark.lastIndex < pages.length) {
+          return { index: bookmark.lastIndex, resumed: true }
+        }
+      }
+      if (config.lastFolder === sourcePath && config.lastPage > 0 && config.lastPage < pages.length) {
+        return { index: config.lastPage, resumed: true }
       }
     } catch {
       // 配置读取失败时从第 0 页开始
     }
-    return 0
+    return { index: 0, resumed: false }
+  }
+
+  /**
+   * 记录当前页为该来源的书签(§观看历史):
+   * 连续翻页 500ms 内只写一次 IPC(节流),页面卸载时冲刷最后一次;
+   * 主进程内原子读改写,保证多文件夹书签互不覆盖。
+   */
+  private scheduleBookmark(index: number): void {
+    if (this.sourcePath === '') return
+    const page = this.pages[index]
+    if (!page) return
+    this.pendingBookmark = {
+      folderPath: this.sourcePath,
+      lastImagePath: page.path,
+      lastIndex: index,
+      pageCount: this.pages.length
+    }
+    if (this.bookmarkTimer !== null) clearTimeout(this.bookmarkTimer)
+    this.bookmarkTimer = setTimeout(() => {
+      this.bookmarkTimer = null
+      void this.flushBookmark()
+    }, BOOKMARK_DEBOUNCE_MS)
+  }
+
+  /** 写入待落盘书签并通知浏览视图刷新进度(失败不影响阅读) */
+  private async flushBookmark(): Promise<void> {
+    const bookmark = this.pendingBookmark
+    if (bookmark === null) return
+    this.pendingBookmark = null
+    try {
+      const bookmarks = await window.komascope.setBookmark(bookmark)
+      this.callbacks.onBookmarksChanged?.(bookmarks)
+    } catch {
+      // 书签写入失败静默(下次翻页再写)
+    }
+  }
+
+  /** 立即冲刷节流中的书签(页面卸载时调用) */
+  private flushBookmarkNow(): void {
+    if (this.bookmarkTimer !== null) {
+      clearTimeout(this.bookmarkTimer)
+      this.bookmarkTimer = null
+    }
+    void this.flushBookmark()
   }
 
   /** 打开单张图片(拖拽/后续扩展) */
@@ -274,7 +370,41 @@ export class ViewerController {
         return { path, name, width: meta.width, height: meta.height, size: 0 }
       })
     )
+    // 同属一个文件夹时按该文件夹记录书签(§观看历史);跨文件夹则不归属任何书签
+    const folder = parentFolder(paths[0])
+    this.sourcePath = folder !== '' && paths.every((p) => parentFolder(p) === folder) ? folder : ''
     this.setPages(pages)
+    // 工具栏路径同步(§4.3.4:拖入图片后不再残留上一个来源路径)
+    if (this.sourcePath !== '') this.callbacks.onFolderChanged?.(this.sourcePath)
+  }
+
+  /**
+   * 结束当前来源(§5.2:「返回书库」等主动退出阅读):
+   * 先冲刷待写入书签(结束后用户只能靠书签回到该位置),再清空页面列表与全部解码状态,
+   * 使「缩略图浏览」不再把用户带回旧图、侧栏与状态栏同步复位。
+   */
+  closeSource(): void {
+    this.flushBookmarkNow()
+    // 递增世代:在途解码结果全部作废
+    this.loadSeq++
+    this.sourcePath = ''
+    this.pages = []
+    this.currentIndex = -1
+    this.tiled = false
+    this.imageSize = { width: 0, height: 0 }
+    this.bitmap?.close()
+    this.bitmap = null
+    this.rightBitmap?.close()
+    this.rightBitmap = null
+    this.tileCache.clear()
+    this.inFlightTiles.clear()
+    this.failedTiles.clear()
+    this.statusbar.setPage(0, 0)
+    this.statusbar.setImageSize(0, 0)
+    // 侧栏/长图消费空列表后自行清空
+    this.callbacks.onPagesChanged?.([], -1)
+    // 清理原生/整页位图、清空画布并隐藏画布
+    this.showEmpty()
   }
 
   nextPage(): void {
@@ -453,8 +583,9 @@ export class ViewerController {
     this.statusbar.setPage(index, this.pages.length)
     this.statusbar.setImageSize(page.width, page.height)
     this.callbacks.onPagesChanged?.(this.pages, index)
-    // 书签(§13 P1):记录当前页码(防抖落盘由 ConfigStore 处理)
+    // 书签(§13 P1 / §观看历史):记录当前页码(旧字段向前兼容)+ 该文件夹自己的书签
     void window.komascope.setConfig({ lastPage: index })
+    this.scheduleBookmark(index)
 
     // 原生图源模式(§性能/§格式):以下两类交主进程 sharp 按视口区域流式渲染,
     // 内存与图片原始尺寸解耦,突破 8192 纹理上限与整页解码像素上限——
@@ -834,9 +965,14 @@ export class ViewerController {
     if (this.tileCache.hasPage(key)) return
     this.decodeQueue = this.decodeQueue.then(async () => {
       try {
-        const blob = await this.getPageBlob(page)
+        // 浏览视图来源的页面尺寸未解析(为 0):先补读元数据再复判,
+        // 避免超大图(非 JPEG 需整页解码)被预解码导致 OOM(§12 风险应对)
+        const target = await this.ensurePageMeta(index)
+        if (target.width > TILED_THRESHOLD || target.height > TILED_THRESHOLD) return
+        if (this.needsNative(target)) return
+        const blob = await this.getPageBlob(target)
         const bitmap = await createImageBitmap(blob)
-        this.tileCache.setPage(key, bitmap)
+        this.tileCache.setPage(this.pageCacheKey(target), bitmap)
       } catch {
         // 预解码失败静默(下次翻页时再解码)
       }
@@ -844,30 +980,48 @@ export class ViewerController {
     void this.decodeQueue
   }
 
-  /** 瓦片解码(经 LRU 缓存);同坐标在途解码共享同一 Promise,
-   * 避免连续交互对同一瓦片重复解码(后批次覆盖前批次位图且不 close) */
+  /**
+   * 瓦片解码(经 LRU 缓存);同页同坐标在途解码共享同一 Promise,
+   * 避免连续交互对同一瓦片重复解码(后批次覆盖前批次位图且不 close)。
+   *
+   * 在途 key **含页标识**(§5.1 串图修复):跨页(换图)绝不复用 ——
+   * 否则新图会拿到上一张图的瓦片位图,按新图坐标系绘制即出现"上一张的解码块"。
+   */
   private async decodeTile(tileX: number, tileY: number): Promise<ImageBitmap | null> {
-    const key = `${tileX}:${tileY}`
+    const page = this.pages[this.currentIndex]
+    if (!page) return null
+    const pageKey = this.pageCacheKey(page)
+    const key = `${pageKey}|${tileX}:${tileY}`
     const inFlight = this.inFlightTiles.get(key)
     if (inFlight) return inFlight
-    const p = this.decodeTileInner(tileX, tileY).finally(() => {
+    const p = this.decodeTileInner(pageKey, tileX, tileY).finally(() => {
       this.inFlightTiles.delete(key)
     })
     this.inFlightTiles.set(key, p)
     return p
   }
 
-  private async decodeTileInner(tileX: number, tileY: number): Promise<ImageBitmap | null> {
-    const page = this.pages[this.currentIndex]
-    if (!page || !this.pageBlob) return null
+  /**
+   * 瓦片解码主体:所有页面状态在 await **之前**捕获,
+   * await 之后按世代校验,翻页/换源后丢弃结果(关闭位图),不写入新页缓存(§5.1)。
+   */
+  private async decodeTileInner(
+    pageKey: string,
+    tileX: number,
+    tileY: number
+  ): Promise<ImageBitmap | null> {
+    const blob = this.pageBlob
+    if (!blob) return null
     const seq = this.loadSeq
+    const imageSize = this.imageSize
+    const tiledFromFull = this.tiledFromFull
     const origin = tileOrigin(tileX, tileY)
-    const tileW = Math.min(TILE_SIZE, this.imageSize.width - origin.x)
-    const tileH = Math.min(TILE_SIZE, this.imageSize.height - origin.y)
+    const tileW = Math.min(TILE_SIZE, imageSize.width - origin.x)
+    const tileH = Math.min(TILE_SIZE, imageSize.height - origin.y)
     if (tileW <= 0 || tileH <= 0) return null
     try {
       let bitmap: ImageBitmap
-      if (this.tiledFromFull) {
+      if (tiledFromFull) {
         // 从整页位图裁剪:毫秒级内存拷贝,避免每瓦片整图解码
         const full = await this.ensureFullBitmap()
         if (!full) {
@@ -879,10 +1033,15 @@ export class ViewerController {
         bitmap = await createImageBitmap(full, origin.x, origin.y, tileW, tileH)
       } else {
         // JPEG:Chromium 支持源矩形部分解码,按瓦片解码内存最优
-        bitmap = await createImageBitmap(this.pageBlob, origin.x, origin.y, tileW, tileH)
+        bitmap = await createImageBitmap(blob, origin.x, origin.y, tileW, tileH)
+      }
+      // 世代/页校验:解码期间翻页或换源 → 丢弃并关闭位图,不得写入新页缓存(§5.1)
+      if (this.loadSeq !== seq || this.pageBlob !== blob) {
+        bitmap.close()
+        return null
       }
       this.failedTiles.delete(`${tileX}:${tileY}`)
-      this.tileCache.set(this.pageCacheKey(page), tileX, tileY, bitmap)
+      this.tileCache.set(pageKey, tileX, tileY, bitmap)
       return bitmap
     } catch {
       // 解码失败或翻页竞态:仅当仍在本页时记入黑名单,
@@ -936,6 +1095,10 @@ export class ViewerController {
         flipH: this.flipH,
         flipV: this.flipV
       })
+    } else {
+      // 无任何可绘制内容(瓦片/原生区域解码在途或失败、空页):
+      // 必须清空画布,否则保留上一张图的像素,表现为"上一张的解码块残留"(§5.1)
+      this.renderer.clear()
     }
   }
 

@@ -35,9 +35,9 @@ function toImageSourceUrl(
 }
 
 const api: KomaScopeApi = {
-  openFolderDialog: () => ipcRenderer.invoke('folder:open'),
+  pickFolder: () => ipcRenderer.invoke('folder:pick'),
+  listDirectory: (folderPath) => ipcRenderer.invoke('folder:list', folderPath),
   openArchiveDialog: () => ipcRenderer.invoke('archive:open'),
-  scanFolder: (folderPath) => ipcRenderer.invoke('folder:scan', folderPath),
   scanArchive: (archivePath) => ipcRenderer.invoke('archive:scan', archivePath),
   readArchiveEntry: (archivePath, entryName) =>
     ipcRenderer.invoke('archive:read', archivePath, entryName),
@@ -50,6 +50,7 @@ const api: KomaScopeApi = {
   setConfig: (patch) => ipcRenderer.invoke('config:set', patch),
   removeRecentFolder: (path) => ipcRenderer.invoke('config:removeRecentFolder', path),
   addRecentFolder: (path) => ipcRenderer.invoke('config:addRecentFolder', path),
+  setBookmark: (bookmark) => ipcRenderer.invoke('config:setBookmark', bookmark),
   setMenuLocale: (locale) => ipcRenderer.invoke('menu:set-locale', locale),
   onMenuAction: (handler) => {
     ipcRenderer.on('menu:action', (_event, action: string) => handler(action))
